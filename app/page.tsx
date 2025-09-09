@@ -89,6 +89,7 @@ export default function AISandboxPage() {
   const [sandboxFiles, setSandboxFiles] = useState<Record<string, string>>({});
   const [fileStructure, setFileStructure] = useState<string>('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [creationMode, setCreationMode] = useState<'url' | 'prompt'>('url');
   
   const [conversationContext, setConversationContext] = useState<{
     scrapedWebsites: Array<{ url: string; content: any; timestamp: Date }>;
@@ -459,6 +460,39 @@ Tip: I automatically detect and install npm packages from your code imports (lik
     } finally {
       setLoading(false);
     }
+  };
+
+  // Create a fresh new project: clear conversation and generation state, then create a new sandbox
+  const createNewProject = async () => {
+    // Reset conversation and generation state to a clean slate
+    setChatMessages([{ content: 'Starting a new project...', type: 'system', timestamp: new Date() }]);
+    setConversationContext({
+      scrapedWebsites: [],
+      generatedComponents: [],
+      appliedCode: [],
+      currentProject: '',
+      lastGeneratedCode: undefined
+    });
+    setGenerationProgress({
+      isGenerating: false,
+      status: '',
+      components: [],
+      currentComponent: 0,
+      streamedCode: '',
+      isStreaming: false,
+      isThinking: false,
+      files: [],
+      lastProcessedPosition: 0
+    });
+    setPromptInput('');
+    setHomeUrlInput('');
+    setHomeContextInput('');
+    setFileStructure('');
+    setSandboxFiles({});
+    setSelectedFile(null);
+
+    // Create a new sandbox and mark it as coming from the home screen to avoid duplicate welcome messages
+    await createSandbox(true);
   };
 
   const displayStructure = (structure: any) => {
@@ -2364,8 +2398,301 @@ Focus on the key sections and content, making it clean and modern while preservi
     
     setHomeScreenFading(true);
     
-    // Clear messages and immediately show the cloning message
+    // Clear messages
     setChatMessages([]);
+    
+    if (creationMode === 'url') {
+      // Handle URL replication (existing logic)
+      await handleUrlReplication();
+    } else {
+      // Handle prompt-based creation (new logic)
+      await handlePromptCreation();
+    }
+  };
+
+  const handlePromptCreation = async () => {
+    const prompt = homeUrlInput.trim();
+    addChatMessage(`Creating website from prompt: "${prompt}"...`, 'system');
+    
+    // Start creating sandbox and generating code immediately
+    const sandboxPromise = !sandboxData ? createSandbox(true) : Promise.resolve();
+    
+    // Set loading stage and switch to generation tab
+    setLoadingStage('planning');
+    setActiveTab('preview');
+    
+    setTimeout(async () => {
+      setShowHomeScreen(false);
+      setHomeScreenFading(false);
+      
+      try {
+        // Wait for sandbox to be ready (if it's still creating)
+        await sandboxPromise;
+        
+        // Process the prompt through our API
+        const promptResponse = await fetch('/api/create-from-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            prompt: prompt,
+            style: selectedStyle 
+          })
+        });
+        
+        if (!promptResponse.ok) {
+          throw new Error('Failed to process prompt');
+        }
+        
+        const promptData = await promptResponse.json();
+        
+        if (!promptData.success) {
+          throw new Error(promptData.error || 'Failed to process prompt');
+        }
+        
+        // Update loading stage to generating and switch to generation tab
+        setLoadingStage('generating');
+        setTimeout(() => {
+          setActiveTab('generation');
+        }, 1000);
+        
+        // Store the prompt in conversation context
+        setConversationContext(prev => ({
+          ...prev,
+          currentProject: `${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}`
+        }));
+        
+        addChatMessage('Generating your custom website...', 'system');
+        
+        setGenerationProgress(prev => ({
+          isGenerating: true,
+          status: 'Initializing AI...',
+          components: [],
+          currentComponent: 0,
+          streamedCode: '',
+          isStreaming: true,
+          isThinking: false,
+          thinkingText: undefined,
+          thinkingDuration: undefined,
+          files: prev.files || [],
+          currentFile: undefined,
+          lastProcessedPosition: 0
+        }));
+        
+        // Generate the code using the enhanced prompt
+        const aiResponse = await fetch('/api/generate-ai-code-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: promptData.enhancedPrompt,
+            model: aiModel,
+            context: {
+              sandboxId: sandboxData?.sandboxId,
+              structure: structureContent,
+              conversationContext: conversationContext
+            }
+          })
+        });
+        
+        if (!aiResponse.ok || !aiResponse.body) {
+          throw new Error('Failed to generate code');
+        }
+        
+        const reader = aiResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let generatedCode = '';
+        let explanation = '';
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.type === 'status') {
+                  setGenerationProgress(prev => ({ ...prev, status: data.message }));
+                } else if (data.type === 'thinking') {
+                  setGenerationProgress(prev => ({ 
+                    ...prev, 
+                    isThinking: true,
+                    thinkingText: (prev.thinkingText || '') + data.text
+                  }));
+                } else if (data.type === 'thinking_complete') {
+                  setGenerationProgress(prev => ({ 
+                    ...prev, 
+                    isThinking: false,
+                    thinkingDuration: data.duration
+                  }));
+                } else if (data.type === 'conversation') {
+                  // Add conversational text to chat only if it's not code
+                  let text = data.text || '';
+                  
+                  // Remove package tags from the text
+                  text = text.replace(/<package>[^<]*<\/package>/g, '');
+                  text = text.replace(/<packages>[^<]*<\/packages>/g, '');
+                  
+                  // Filter out any XML tags and file content that slipped through
+                  if (!text.includes('<file') && !text.includes('import React') && 
+                      !text.includes('export default') && !text.includes('className=') &&
+                      text.trim().length > 0) {
+                    addChatMessage(text.trim(), 'ai');
+                  }
+                } else if (data.type === 'stream' && data.raw) {
+                  setGenerationProgress(prev => {
+                    const newStreamedCode = prev.streamedCode + data.text;
+                    
+                    const updatedState = { 
+                      ...prev, 
+                      streamedCode: newStreamedCode,
+                      isStreaming: true,
+                      isThinking: false,
+                      status: 'Generating code...'
+                    };
+                    
+                    // Process complete files from the accumulated stream
+                    const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
+                    let match;
+                    const processedFiles = new Set(prev.files.map(f => f.path));
+                    
+                    while ((match = fileRegex.exec(newStreamedCode)) !== null) {
+                      const filePath = match[1];
+                      const fileContent = match[2];
+                      
+                      // Only add if we haven't processed this file yet
+                      if (!processedFiles.has(filePath)) {
+                        const fileExt = filePath.split('.').pop() || '';
+                        const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
+                                        fileExt === 'css' ? 'css' :
+                                        fileExt === 'json' ? 'json' :
+                                        fileExt === 'html' ? 'html' : 'text';
+                        
+                        updatedState.files = [...updatedState.files, {
+                          path: filePath,
+                          content: fileContent.trim(),
+                          type: fileType,
+                          completed: true,
+                          edited: false
+                        }];
+                        
+                        updatedState.status = `Completed ${filePath}`;
+                        processedFiles.add(filePath);
+                      }
+                    }
+                    
+                    // Check for current file being generated (incomplete file at the end)
+                    const lastFileMatch = newStreamedCode.match(/<file path="([^"]+)">([^]*?)$/);
+                    if (lastFileMatch && !lastFileMatch[0].includes('</file>')) {
+                      const filePath = lastFileMatch[1];
+                      const partialContent = lastFileMatch[2];
+                      
+                      if (!processedFiles.has(filePath)) {
+                        const fileExt = filePath.split('.').pop() || '';
+                        const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
+                                        fileExt === 'css' ? 'css' :
+                                        fileExt === 'json' ? 'json' :
+                                        fileExt === 'html' ? 'html' : 'text';
+                        
+                        updatedState.currentFile = { 
+                          path: filePath, 
+                          content: partialContent, 
+                          type: fileType 
+                        };
+                        updatedState.status = `Generating ${filePath}`;
+                      }
+                    } else {
+                      updatedState.currentFile = undefined;
+                    }
+                    
+                    return updatedState;
+                  });
+                } else if (data.type === 'complete') {
+                  generatedCode = data.generatedCode;
+                  explanation = data.explanation;
+                  
+                  // Save the last generated code
+                  setConversationContext(prev => ({
+                    ...prev,
+                    lastGeneratedCode: generatedCode
+                  }));
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE data:', e);
+              }
+            }
+          }
+        }
+        
+        setGenerationProgress(prev => ({
+          ...prev,
+          isGenerating: false,
+          isStreaming: false,
+          status: 'Generation complete!'
+        }));
+        
+        if (generatedCode) {
+          addChatMessage('Custom website generated!', 'system');
+          
+          // Add the explanation to chat if available
+          if (explanation && explanation.trim()) {
+            addChatMessage(explanation, 'ai');
+          }
+          
+          setPromptInput(generatedCode);
+          
+          // Apply the generated code
+          await applyGeneratedCode(generatedCode, false);
+          
+          addChatMessage(
+            `Successfully created your custom website${selectedStyle ? ` with ${selectedStyle} styling` : ''}! You can now ask me to modify any section or add new features.`, 
+            'ai',
+            {
+              generatedCode: generatedCode
+            }
+          );
+          
+        } else {
+          throw new Error('Failed to generate website');
+        }
+        
+        setHomeUrlInput('');
+        setHomeContextInput('');
+        
+        // Clear generation progress and states
+        setGenerationProgress(prev => ({
+          ...prev,
+          isGenerating: false,
+          isStreaming: false,
+          status: 'Generation complete!'
+        }));
+        
+        setLoadingStage(null);
+        
+        setTimeout(() => {
+          // Switch back to preview tab but keep files
+          setActiveTab('preview');
+        }, 1000);
+        
+      } catch (error: any) {
+        addChatMessage(`Failed to create website: ${error.message}`, 'system');
+        setLoadingStage(null);
+        setGenerationProgress(prev => ({
+          ...prev,
+          isGenerating: false,
+          isStreaming: false,
+          status: '',
+          files: prev.files
+        }));
+        setActiveTab('preview');
+      }
+    }, 500);
+  };
+
+  const handleUrlReplication = async () => {
     let displayUrl = homeUrlInput.trim();
     if (!displayUrl.match(/^https?:\/\//i)) {
       displayUrl = 'https://' + displayUrl;
@@ -2557,8 +2884,6 @@ Focus on the key sections and content, making it clean and modern.`;
                   setGenerationProgress(prev => {
                     const newStreamedCode = prev.streamedCode + data.text;
                     
-                    // Tab is already switched after scraping
-                    
                     const updatedState = { 
                       ...prev, 
                       streamedCode: newStreamedCode,
@@ -2584,37 +2909,15 @@ Focus on the key sections and content, making it clean and modern.`;
                                         fileExt === 'json' ? 'json' :
                                         fileExt === 'html' ? 'html' : 'text';
                         
-                        // Check if file already exists
-                        const existingFileIndex = updatedState.files.findIndex(f => f.path === filePath);
+                        updatedState.files = [...updatedState.files, {
+                          path: filePath,
+                          content: fileContent.trim(),
+                          type: fileType,
+                          completed: true,
+                          edited: false
+                        }];
                         
-                        if (existingFileIndex >= 0) {
-                          // Update existing file and mark as edited
-                          updatedState.files = [
-                            ...updatedState.files.slice(0, existingFileIndex),
-                            {
-                              ...updatedState.files[existingFileIndex],
-                              content: fileContent.trim(),
-                              type: fileType,
-                              completed: true,
-                              edited: true
-                            },
-                            ...updatedState.files.slice(existingFileIndex + 1)
-                          ];
-                        } else {
-                          // Add new file
-                          updatedState.files = [...updatedState.files, {
-                            path: filePath,
-                            content: fileContent.trim(),
-                            type: fileType,
-                            completed: true,
-                            edited: false
-                          }];
-                        }
-                        
-                        // Only show file status if not in edit mode
-                        if (!prev.isEdit) {
-                          updatedState.status = `Completed ${filePath}`;
-                        }
+                        updatedState.status = `Completed ${filePath}`;
                         processedFiles.add(filePath);
                       }
                     }
@@ -2637,10 +2940,7 @@ Focus on the key sections and content, making it clean and modern.`;
                           content: partialContent, 
                           type: fileType 
                         };
-                        // Only show file status if not in edit mode
-                        if (!prev.isEdit) {
-                          updatedState.status = `Generating ${filePath}`;
-                        }
+                        updatedState.status = `Generating ${filePath}`;
                       }
                     } else {
                       updatedState.currentFile = undefined;
@@ -2743,6 +3043,7 @@ Focus on the key sections and content, making it clean and modern.`;
           // Keep files to display in sidebar
           files: prev.files
         }));
+        setActiveTab('preview');
       }
     }, 500);
   };
@@ -2829,58 +3130,159 @@ Focus on the key sections and content, making it clean and modern.`;
                   }}
                   transition={{ duration: 0.3, ease: "easeOut" }}
                 >
-                  Re-imagine any website, in seconds.
+                  Create websites from scratch or replicate existing ones, in seconds.
                 </motion.p>
+              </div>
+              
+              {/* Creation Mode Tabs */}
+              <div className="mt-6 flex justify-center animate-[fadeIn_0.8s_ease-out]">
+                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-600 rounded-xl p-1 shadow-sm">
+                  <div className="flex">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreationMode('url');
+                        setHomeUrlInput('');
+                        setHomeContextInput('');
+                        setShowStyleSelector(false);
+                        setSelectedStyle(null);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        creationMode === 'url'
+                          ? 'bg-[#36322F] text-white shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.1a2.995 2.995 0 00.449-3.55m6.105-4.178a4 4 0 015.656 0l1.102 1.1a2.995 2.995 0 00.449 3.55l-1.1 1.102a4 4 0 01-5.656 0L14 12a4 4 0 010-5.656l.172-.172z" />
+                        </svg>
+                        Replicate Website
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreationMode('prompt');
+                        setHomeUrlInput('');
+                        setHomeContextInput('');
+                        setShowStyleSelector(false);
+                        setSelectedStyle(null);
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        creationMode === 'prompt'
+                          ? 'bg-[#36322F] text-white shadow-sm'
+                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Create from Prompt
+                      </div>
+                    </button>
+                  </div>
+                </div>
               </div>
               
               <form onSubmit={handleHomeScreenSubmit} className="mt-5 max-w-3xl mx-auto">
                 <div className="w-full relative group">
-                  <input
-                    type="text"
-                    value={homeUrlInput}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setHomeUrlInput(value);
-                      
-                      // Check if it's a valid domain
-                      const domainRegex = /^(https?:\/\/)?(([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(\/?.*)?$/;
-                      if (domainRegex.test(value) && value.length > 5) {
-                        // Small delay to make the animation feel smoother
-                        setTimeout(() => setShowStyleSelector(true), 100);
-                      } else {
-                        setShowStyleSelector(false);
-                        setSelectedStyle(null);
-                      }
-                    }}
-                    placeholder=" "
-                    aria-placeholder="https://firecrawl.dev"
-                    className="h-[3.25rem] w-full resize-none focus-visible:outline-none focus-visible:ring-orange-500 focus-visible:ring-2 rounded-[18px] text-sm text-[#36322F] dark:text-white px-4 pr-12 border-[.75px] border-border bg-white dark:bg-gray-800 dark:border-gray-600"
-                    style={{
-                      boxShadow: '0 0 0 1px #e3e1de66, 0 1px 2px #5f4a2e14, 0 4px 6px #5f4a2e0a, 0 40px 40px -24px #684b2514',
-                      filter: 'drop-shadow(rgba(249, 224, 184, 0.3) -0.731317px -0.731317px 35.6517px)'
-                    }}
-                    autoFocus
-                  />
-                  <div 
-                    aria-hidden="true" 
-                    className={`absolute top-1/2 -translate-y-1/2 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${
-                      homeUrlInput ? 'opacity-0' : 'opacity-100'
-                    }`}
-                  >
-                    <span className="text-[#605A57]/50 dark:text-gray-400/70" style={{ fontFamily: 'monospace' }}>
-                      https://firecrawl.dev
-                    </span>
-                  </div>
+                  {creationMode === 'url' ? (
+                    <>
+                      <input
+                        type="text"
+                        value={homeUrlInput}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setHomeUrlInput(value);
+                          
+                          // Check if it's a valid domain
+                          const domainRegex = /^(https?:\/\/)?(([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(\/?.*)?$/;
+                          if (domainRegex.test(value) && value.length > 5) {
+                            // Small delay to make the animation feel smoother
+                            setTimeout(() => setShowStyleSelector(true), 100);
+                          } else {
+                            setShowStyleSelector(false);
+                            setSelectedStyle(null);
+                          }
+                        }}
+                        placeholder=" "
+                        aria-placeholder="https://firecrawl.dev"
+                        className="h-[3.25rem] w-full resize-none focus-visible:outline-none focus-visible:ring-orange-500 focus-visible:ring-2 rounded-[18px] text-sm text-[#36322F] dark:text-white px-4 pr-12 border-[.75px] border-border bg-white dark:bg-gray-800 dark:border-gray-600"
+                        style={{
+                          boxShadow: '0 0 0 1px #e3e1de66, 0 1px 2px #5f4a2e14, 0 4px 6px #5f4a2e0a, 0 40px 40px -24px #684b2514',
+                          filter: 'drop-shadow(rgba(249, 224, 184, 0.3) -0.731317px -0.731317px 35.6517px)'
+                        }}
+                        autoFocus
+                      />
+                      <div 
+                        aria-hidden="true" 
+                        className={`absolute top-1/2 -translate-y-1/2 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${
+                          homeUrlInput ? 'opacity-0' : 'opacity-100'
+                        }`}
+                      >
+                        <span className="text-[#605A57]/50 dark:text-gray-400/70" style={{ fontFamily: 'monospace' }}>
+                          https://firecrawl.dev
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <textarea
+                        value={homeUrlInput}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setHomeUrlInput(value);
+                          
+                          // Show style selector when prompt has content
+                          if (value.trim().length > 10) {
+                            setTimeout(() => setShowStyleSelector(true), 100);
+                          } else {
+                            setShowStyleSelector(false);
+                            setSelectedStyle(null);
+                          }
+                        }}
+                        placeholder=" "
+                        className="min-h-[3.25rem] max-h-[8rem] w-full resize-none focus-visible:outline-none focus-visible:ring-orange-500 focus-visible:ring-2 rounded-[18px] text-sm text-[#36322F] dark:text-white px-4 pr-12 py-3 border-[.75px] border-border bg-white dark:bg-gray-800 dark:border-gray-600"
+                        style={{
+                          boxShadow: '0 0 0 1px #e3e1de66, 0 1px 2px #5f4a2e14, 0 4px 6px #5f4a2e0a, 0 40px 40px -24px #684b2514',
+                          filter: 'drop-shadow(rgba(249, 224, 184, 0.3) -0.731317px -0.731317px 35.6517px)'
+                        }}
+                        rows={2}
+                        autoFocus
+                      />
+                      <div 
+                        aria-hidden="true" 
+                        className={`absolute top-3 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${
+                          homeUrlInput ? 'opacity-0' : 'opacity-100'
+                        }`}
+                      >
+                        <span className="text-[#605A57]/50 dark:text-gray-400/70">
+                          Create a modern e-commerce website for selling handmade jewelry...
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <button
                     type="submit"
                     disabled={!homeUrlInput.trim()}
                     className="absolute top-1/2 transform -translate-y-1/2 right-2 flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title={selectedStyle ? `Clone with ${selectedStyle} Style` : 'Clone Website'}
+                    title={creationMode === 'url' 
+                      ? (selectedStyle ? `Clone with ${selectedStyle} Style` : 'Clone Website')
+                      : (selectedStyle ? `Create with ${selectedStyle} Style` : 'Create Website')
+                    }
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                      <polyline points="9 10 4 15 9 20"></polyline>
-                      <path d="M20 4v7a4 4 0 0 1-4 4H4"></path>
-                    </svg>
+                    {creationMode === 'url' ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                        <polyline points="9 10 4 15 9 20"></polyline>
+                        <path d="M20 4v7a4 4 0 0 1-4 4H4"></path>
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    )}
                   </button>
                 </div>
                   
@@ -2891,7 +3293,9 @@ Focus on the key sections and content, making it clean and modern.`;
                         showStyleSelector ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
                       }`}>
                     <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-600 rounded-xl p-4 shadow-sm">
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 font-medium">How do you want your site to look?</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 font-medium">
+                        {creationMode === 'url' ? 'How do you want your site to look?' : 'What style should your website have?'}
+                      </p>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         {[
                           { name: 'Neobrutalist', description: 'Bold colors, thick borders' },
@@ -2971,7 +3375,10 @@ Focus on the key sections and content, making it clean and modern.`;
                               }
                             }
                           }}
-                          placeholder="Add more details: specific features, color preferences..."
+                          placeholder={creationMode === 'url' 
+                            ? "Add more details: specific features, color preferences..." 
+                            : "Additional requirements: mobile-responsive, dark mode, specific sections..."
+                          }
                           className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-orange-300 dark:focus:border-orange-500 focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-900/50 transition-all duration-200"
                         />
                       </div>
@@ -3046,6 +3453,16 @@ Focus on the key sections and content, making it clean and modern.`;
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </Button>
+          <Button
+            variant="code"
+            onClick={createNewProject}
+            size="sm"
+            title="Create new project"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a1 1 0 001 1h16a1 1 0 001-1V7M3 7l9 6 9-6" />
             </svg>
           </Button>
           <Button 
