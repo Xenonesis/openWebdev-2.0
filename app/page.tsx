@@ -8,23 +8,24 @@ import { Textarea } from '@/components/ui/textarea';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 // Import icons from centralized module to avoid Turbopack chunk issues
-import { 
-  FiFile, 
-  FiChevronRight, 
+import {
+  FiFile,
+  FiChevronRight,
   FiChevronDown,
   FiGithub,
-  BsFolderFill, 
+  BsFolderFill,
   BsFolder2Open,
-  SiJavascript, 
-  SiReact, 
-  SiCss3, 
-  SiJson 
+  SiJavascript,
+  SiReact,
+  SiCss3,
+  SiJson
 } from '@/lib/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import CodeApplicationProgress, { type CodeApplicationState } from '@/components/CodeApplicationProgress';
 import { ThemeToggle } from '@/app/components/theme-toggle';
 import { ThemeLogo } from '@/app/components/theme-logo';
 import { SettingsModal } from '@/components/SettingsModal';
+import { ModelSelector } from '@/components/ModelSelector';
 
 interface SandboxData {
   sandboxId: string;
@@ -65,7 +66,8 @@ export default function AISandboxPage() {
   const router = useRouter();
   const [aiModel, setAiModel] = useState(() => {
     const modelParam = searchParams.get('model');
-    return appConfig.ai.availableModels.includes(modelParam || '') ? modelParam! : appConfig.ai.defaultModel;
+    // Use the model from URL if provided, otherwise use default
+    return modelParam || appConfig.ai.defaultModel;
   });
   const [urlOverlayVisible, setUrlOverlayVisible] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -90,7 +92,7 @@ export default function AISandboxPage() {
   const [fileStructure, setFileStructure] = useState<string>('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [creationMode, setCreationMode] = useState<'url' | 'prompt'>('url');
-  
+
   const [conversationContext, setConversationContext] = useState<{
     scrapedWebsites: Array<{ url: string; content: any; timestamp: Date }>;
     generatedComponents: Array<{ name: string; path: string; content: string }>;
@@ -104,15 +106,15 @@ export default function AISandboxPage() {
     currentProject: '',
     lastGeneratedCode: undefined
   });
-  
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const codeDisplayRef = useRef<HTMLDivElement>(null);
-  
+
   const [codeApplicationState, setCodeApplicationState] = useState<CodeApplicationState>({
     stage: null
   });
-  
+
   const [generationProgress, setGenerationProgress] = useState<{
     isGenerating: boolean;
     status: string;
@@ -158,12 +160,12 @@ export default function AISandboxPage() {
           addChatMessage('Failed to clear old conversation data.', 'error');
         }
       }
-      
+
       if (!isMounted) return;
 
       // Check if sandbox ID is in URL
       const sandboxIdParam = searchParams.get('sandbox');
-      
+
       setLoading(true);
       try {
         if (sandboxIdParam) {
@@ -186,14 +188,14 @@ export default function AISandboxPage() {
         }
       }
     };
-    
+
     initializePage();
 
     return () => {
       isMounted = false;
     };
   }, []); // Run only on mount
-  
+
   useEffect(() => {
     // Handle Escape key for home screen
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -205,11 +207,11 @@ export default function AISandboxPage() {
         }, 500);
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showHomeScreen]);
-  
+
   // Start capturing screenshot if URL is provided on mount (from home screen)
   useEffect(() => {
     if (!showHomeScreen && homeUrlInput && !urlScreenshot && !isCapturingScreenshot) {
@@ -225,12 +227,12 @@ export default function AISandboxPage() {
   useEffect(() => {
     // Only check sandbox status on mount and when user navigates to the page
     checkSandboxStatus();
-    
+
     // Optional: Check status when window regains focus
     const handleFocus = () => {
       checkSandboxStatus();
     };
-    
+
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -262,59 +264,59 @@ export default function AISandboxPage() {
       return [...prev, { content, type, timestamp: new Date(), metadata }];
     });
   };
-  
+
   const checkAndInstallPackages = async () => {
     if (!sandboxData) {
       addChatMessage('No active sandbox. Create a sandbox first!', 'system');
       return;
     }
-    
+
     // Vite error checking removed - handled by template setup
     addChatMessage('Sandbox is ready. Vite configuration is handled by the template.', 'system');
   };
-  
+
   const handleSurfaceError = (errors: any[]) => {
     // Function kept for compatibility but Vite errors are now handled by template
-    
+
     // Focus the input
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     if (textarea) {
       textarea.focus();
     }
   };
-  
+
   const installPackages = async (packages: string[]) => {
     if (!sandboxData) {
       addChatMessage('No active sandbox. Create a sandbox first!', 'system');
       return;
     }
-    
+
     try {
       const response = await fetch('/api/install-packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ packages })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to install packages: ${response.statusText}`);
       }
-      
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      
+
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              
+
               switch (data.type) {
                 case 'command':
                   // Don't show npm install commands - they're handled by info messages
@@ -355,7 +357,7 @@ export default function AISandboxPage() {
     try {
       const response = await fetch('/api/sandbox-status');
       const data = await response.json();
-      
+
       if (data.active && data.healthy && data.sandboxData) {
         setSandboxData(data.sandboxData);
         updateStatus('Sandbox active', true);
@@ -381,42 +383,42 @@ export default function AISandboxPage() {
     updateStatus('Creating sandbox...', false);
     setResponseArea([]);
     setScreenshotError(null);
-    
+
     try {
       const response = await fetch('/api/create-ai-sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       });
-      
+
       const data = await response.json();
       console.log('[createSandbox] Response data:', data);
-      
+
       if (data.success) {
         setSandboxData(data);
         updateStatus('Sandbox active', true);
         log('Sandbox created successfully!');
         log(`Sandbox ID: ${data.sandboxId}`);
         log(`URL: ${data.url}`);
-        
+
         // Update URL with sandbox ID
         const newParams = new URLSearchParams(searchParams.toString());
         newParams.set('sandbox', data.sandboxId);
         newParams.set('model', aiModel);
         router.push(`/?${newParams.toString()}`, { scroll: false });
-        
+
         // Fade out loading background after sandbox loads
         setTimeout(() => {
           setShowLoadingBackground(false);
         }, 3000);
-        
+
         if (data.structure) {
           displayStructure(data.structure);
         }
-        
+
         // Fetch sandbox files after creation
         setTimeout(fetchSandboxFiles, 1000);
-        
+
         // Restart Vite server to ensure it's running
         setTimeout(async () => {
           try {
@@ -425,7 +427,7 @@ export default function AISandboxPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
             });
-            
+
             if (restartResponse.ok) {
               const restartData = await restartResponse.json();
               if (restartData.success) {
@@ -436,14 +438,14 @@ export default function AISandboxPage() {
             console.error('[createSandbox] Error starting Vite server:', error);
           }
         }, 2000);
-        
+
         // Only add welcome message if not coming from home screen
         if (!fromHomeScreen) {
           addChatMessage(`Sandbox created! ID: ${data.sandboxId}. I now have context of your sandbox and can help you build your app. Just ask me to create components and I'll automatically apply them!
 
 Tip: I automatically detect and install npm packages from your code imports (like react-router-dom, axios, etc.)`, 'system');
         }
-        
+
         setTimeout(() => {
           if (iframeRef.current) {
             iframeRef.current.src = data.url;
@@ -506,11 +508,11 @@ Tip: I automatically detect and install npm packages from your code imports (lik
   const applyGeneratedCode = async (code: string, isEdit: boolean = false) => {
     setLoading(true);
     log('Applying AI-generated code...');
-    
+
     try {
       // Show progress component instead of individual messages
       setCodeApplicationState({ stage: 'analyzing' });
-      
+
       // Get pending packages from tool calls
       const pendingPackages = ((window as any).pendingPackages || []).filter((pkg: any) => pkg && typeof pkg === 'string');
       if (pendingPackages.length > 0) {
@@ -518,106 +520,106 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         // Clear pending packages after use
         (window as any).pendingPackages = [];
       }
-      
+
       // Use streaming endpoint for real-time feedback
       const response = await fetch('/api/apply-ai-code-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           response: code,
           isEdit: isEdit,
           packages: pendingPackages,
           sandboxId: sandboxData?.sandboxId // Pass the sandbox ID to ensure proper connection
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to apply code: ${response.statusText}`);
       }
-      
+
       // Handle streaming response
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let finalData: any = null;
-      
+
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              
+
               switch (data.type) {
                 case 'start':
                   // Don't add as chat message, just update state
                   setCodeApplicationState({ stage: 'analyzing' });
                   break;
-                  
+
                 case 'step':
                   // Update progress state based on step
                   const results: any = {};
                   if (data.message.includes('Installing') && data.packages) {
-                    setCodeApplicationState({ 
-                      stage: 'installing', 
-                      packages: data.packages 
+                    setCodeApplicationState({
+                      stage: 'installing',
+                      packages: data.packages
                     });
                   } else if (data.message.includes('Creating files') || data.message.includes('Applying')) {
-                    setCodeApplicationState({ 
+                    setCodeApplicationState({
                       stage: 'applying',
-                      filesGenerated: results.filesCreated 
+                      filesGenerated: results.filesCreated
                     });
                   }
                   break;
-                  
+
                 case 'package-progress':
                   // Handle package installation progress
                   if (data.installedPackages) {
-                    setCodeApplicationState(prev => ({ 
+                    setCodeApplicationState(prev => ({
                       ...prev,
-                      installedPackages: data.installedPackages 
+                      installedPackages: data.installedPackages
                     }));
                   }
                   break;
-                  
+
                 case 'command':
                   // Don't show npm install commands - they're handled by info messages
                   if (data.command && !data.command.includes('npm install')) {
                     addChatMessage(data.command, 'command', { commandType: 'input' });
                   }
                   break;
-                  
+
                 case 'success':
                   if (data.installedPackages) {
-                    setCodeApplicationState(prev => ({ 
+                    setCodeApplicationState(prev => ({
                       ...prev,
-                      installedPackages: data.installedPackages 
+                      installedPackages: data.installedPackages
                     }));
                   }
                   break;
-                  
+
                 case 'file-progress':
                   // Skip file progress messages, they're noisy
                   break;
-                  
+
                 case 'file-complete':
                   // Could add individual file completion messages if desired
                   break;
-                  
+
                 case 'command-progress':
                   addChatMessage(`${data.action} command: ${data.command}`, 'command', { commandType: 'input' });
                   break;
-                  
+
                 case 'command-output':
-                  addChatMessage(data.output, 'command', { 
-                    commandType: data.stream === 'stderr' ? 'error' : 'output' 
+                  addChatMessage(data.output, 'command', {
+                    commandType: data.stream === 'stderr' ? 'error' : 'output'
                   });
                   break;
-                  
+
                 case 'command-complete':
                   if (data.success) {
                     addChatMessage(`Command completed successfully`, 'system');
@@ -625,7 +627,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                     addChatMessage(`Command failed with exit code ${data.exitCode}`, 'system');
                   }
                   break;
-                  
+
                 case 'complete':
                   finalData = data;
                   setCodeApplicationState({ stage: 'complete' });
@@ -634,15 +636,15 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                     setCodeApplicationState({ stage: null });
                   }, 3000);
                   break;
-                  
+
                 case 'error':
                   addChatMessage(`Error: ${data.message || data.error || 'Unknown error'}`, 'system');
                   break;
-                  
+
                 case 'warning':
                   addChatMessage(`${data.message}`, 'system');
                   break;
-                  
+
                 case 'info':
                   // Show info messages, especially for package installation
                   if (data.message) {
@@ -656,7 +658,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           }
         }
       }
-      
+
       // Process final data
       if (finalData && finalData.type === 'complete') {
         const data = {
@@ -671,176 +673,176 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           missingImports: finalData.missingImports,
           debug: finalData.debug
         };
-        
+
         if (data.success) {
           const { results } = data;
-        
-        // Log package installation results without duplicate messages
-        if (results.packagesInstalled?.length > 0) {
-          log(`Packages installed: ${results.packagesInstalled.join(', ')}`);
-        }
-        
-        if (results.filesCreated?.length > 0) {
-          log('Files created:');
-          results.filesCreated.forEach((file: string) => {
-            log(`  ${file}`, 'command');
-          });
-          
-          // Verify files were actually created by refreshing the sandbox if needed
-          if (sandboxData?.sandboxId && results.filesCreated.length > 0) {
-            // Small delay to ensure files are written
-            setTimeout(() => {
-              // Force refresh the iframe to show new files
-              if (iframeRef.current) {
-                iframeRef.current.src = iframeRef.current.src;
-              }
-            }, 1000);
+
+          // Log package installation results without duplicate messages
+          if (results.packagesInstalled?.length > 0) {
+            log(`Packages installed: ${results.packagesInstalled.join(', ')}`);
           }
-        }
-        
-        if (results.filesUpdated?.length > 0) {
-          log('Files updated:');
-          results.filesUpdated.forEach((file: string) => {
-            log(`  ${file}`, 'command');
-          });
-        }
-        
-        // Update conversation context with applied code
-        setConversationContext(prev => ({
-          ...prev,
-          appliedCode: [...prev.appliedCode, {
-            files: [...(results.filesCreated || []), ...(results.filesUpdated || [])],
-            timestamp: new Date()
-          }]
-        }));
-        
-        if (results.commandsExecuted?.length > 0) {
-          log('Commands executed:');
-          results.commandsExecuted.forEach((cmd: string) => {
-            log(`  $ ${cmd}`, 'command');
-          });
-        }
-        
-        if (results.errors?.length > 0) {
-          results.errors.forEach((err: string) => {
-            log(err, 'error');
-          });
-        }
-        
-        if (data.structure) {
-          displayStructure(data.structure);
-        }
-        
-        if (data.explanation) {
-          log(data.explanation);
-        }
-        
-        if (data.autoCompleted) {
-          log('Auto-generating missing components...', 'command');
-          
-          if (data.autoCompletedComponents) {
-            setTimeout(() => {
-              log('Auto-generated missing components:', 'info');
-              data.autoCompletedComponents.forEach((comp: string) => {
-                log(`  ${comp}`, 'command');
-              });
-            }, 1000);
-          }
-        } else if (data.warning) {
-          log(data.warning, 'error');
-          
-          if (data.missingImports && data.missingImports.length > 0) {
-            const missingList = data.missingImports.join(', ');
-            addChatMessage(
-              `Ask me to "create the missing components: ${missingList}" to fix these import errors.`,
-              'system'
-            );
-          }
-        }
-        
-        log('Code applied successfully!');
-        console.log('[applyGeneratedCode] Response data:', data);
-        console.log('[applyGeneratedCode] Debug info:', data.debug);
-        console.log('[applyGeneratedCode] Current sandboxData:', sandboxData);
-        console.log('[applyGeneratedCode] Current iframe element:', iframeRef.current);
-        console.log('[applyGeneratedCode] Current iframe src:', iframeRef.current?.src);
-        
-        if (results.filesCreated?.length > 0) {
-          setConversationContext(prev => ({
-            ...prev,
-            appliedCode: [...prev.appliedCode, {
-              files: results.filesCreated,
-              timestamp: new Date()
-            }]
-          }));
-          
-          // Update the chat message to show success
-          // Only show file list if not in edit mode
-          if (isEdit) {
-            addChatMessage(`Edit applied successfully!`, 'system');
-          } else {
-            // Check if this is part of a generation flow (has recent AI recreation message)
-            const recentMessages = chatMessages.slice(-5);
-            const isPartOfGeneration = recentMessages.some(m => 
-              m.content.includes('AI recreation generated') || 
-              m.content.includes('Code generated')
-            );
-            
-            // Don't show files if part of generation flow to avoid duplication
-            if (isPartOfGeneration) {
-              addChatMessage(`Applied ${results.filesCreated.length} files successfully!`, 'system');
-            } else {
-              addChatMessage(`Applied ${results.filesCreated.length} files successfully!`, 'system', {
-                appliedFiles: results.filesCreated
-              });
-            }
-          }
-          
-          // If there are failed packages, add a message about checking for errors
-          if (results.packagesFailed?.length > 0) {
-            addChatMessage(`⚠️ Some packages failed to install. Check the error banner above for details.`, 'system');
-          }
-          
-          // Fetch updated file structure
-          await fetchSandboxFiles();
-          
-          // Automatically check and install any missing packages
-          await checkAndInstallPackages();
-          
-          // Test build to ensure everything compiles correctly
-          // Skip build test for now - it's causing errors with undefined activeSandbox
-          // The build test was trying to access global.activeSandbox from the frontend,
-          // but that's only available in the backend API routes
-          console.log('[build-test] Skipping build test - would need API endpoint');
-          
-          // Force iframe refresh after applying code
-          const refreshDelay = appConfig.codeApplication.defaultRefreshDelay; // Allow Vite to process changes
-          
-          setTimeout(() => {
-            if (iframeRef.current && sandboxData?.url) {
-              console.log('[home] Refreshing iframe after code application...');
-              
-              // Method 1: Change src with timestamp
-              const urlWithTimestamp = `${sandboxData.url}?t=${Date.now()}&applied=true`;
-              iframeRef.current.src = urlWithTimestamp;
-              
-              // Method 2: Force reload after a short delay
+
+          if (results.filesCreated?.length > 0) {
+            log('Files created:');
+            results.filesCreated.forEach((file: string) => {
+              log(`  ${file}`, 'command');
+            });
+
+            // Verify files were actually created by refreshing the sandbox if needed
+            if (sandboxData?.sandboxId && results.filesCreated.length > 0) {
+              // Small delay to ensure files are written
               setTimeout(() => {
-                try {
-                  if (iframeRef.current?.contentWindow) {
-                    iframeRef.current.contentWindow.location.reload();
-                    console.log('[home] Force reloaded iframe content');
-                  }
-                } catch (e) {
-                  console.log('[home] Could not reload iframe (cross-origin):', e);
+                // Force refresh the iframe to show new files
+                if (iframeRef.current) {
+                  iframeRef.current.src = iframeRef.current.src;
                 }
               }, 1000);
             }
-          }, refreshDelay);
-          
-          // Vite error checking removed - handled by template setup
-        }
-        
+          }
+
+          if (results.filesUpdated?.length > 0) {
+            log('Files updated:');
+            results.filesUpdated.forEach((file: string) => {
+              log(`  ${file}`, 'command');
+            });
+          }
+
+          // Update conversation context with applied code
+          setConversationContext(prev => ({
+            ...prev,
+            appliedCode: [...prev.appliedCode, {
+              files: [...(results.filesCreated || []), ...(results.filesUpdated || [])],
+              timestamp: new Date()
+            }]
+          }));
+
+          if (results.commandsExecuted?.length > 0) {
+            log('Commands executed:');
+            results.commandsExecuted.forEach((cmd: string) => {
+              log(`  $ ${cmd}`, 'command');
+            });
+          }
+
+          if (results.errors?.length > 0) {
+            results.errors.forEach((err: string) => {
+              log(err, 'error');
+            });
+          }
+
+          if (data.structure) {
+            displayStructure(data.structure);
+          }
+
+          if (data.explanation) {
+            log(data.explanation);
+          }
+
+          if (data.autoCompleted) {
+            log('Auto-generating missing components...', 'command');
+
+            if (data.autoCompletedComponents) {
+              setTimeout(() => {
+                log('Auto-generated missing components:', 'info');
+                data.autoCompletedComponents.forEach((comp: string) => {
+                  log(`  ${comp}`, 'command');
+                });
+              }, 1000);
+            }
+          } else if (data.warning) {
+            log(data.warning, 'error');
+
+            if (data.missingImports && data.missingImports.length > 0) {
+              const missingList = data.missingImports.join(', ');
+              addChatMessage(
+                `Ask me to "create the missing components: ${missingList}" to fix these import errors.`,
+                'system'
+              );
+            }
+          }
+
+          log('Code applied successfully!');
+          console.log('[applyGeneratedCode] Response data:', data);
+          console.log('[applyGeneratedCode] Debug info:', data.debug);
+          console.log('[applyGeneratedCode] Current sandboxData:', sandboxData);
+          console.log('[applyGeneratedCode] Current iframe element:', iframeRef.current);
+          console.log('[applyGeneratedCode] Current iframe src:', iframeRef.current?.src);
+
+          if (results.filesCreated?.length > 0) {
+            setConversationContext(prev => ({
+              ...prev,
+              appliedCode: [...prev.appliedCode, {
+                files: results.filesCreated,
+                timestamp: new Date()
+              }]
+            }));
+
+            // Update the chat message to show success
+            // Only show file list if not in edit mode
+            if (isEdit) {
+              addChatMessage(`Edit applied successfully!`, 'system');
+            } else {
+              // Check if this is part of a generation flow (has recent AI recreation message)
+              const recentMessages = chatMessages.slice(-5);
+              const isPartOfGeneration = recentMessages.some(m =>
+                m.content.includes('AI recreation generated') ||
+                m.content.includes('Code generated')
+              );
+
+              // Don't show files if part of generation flow to avoid duplication
+              if (isPartOfGeneration) {
+                addChatMessage(`Applied ${results.filesCreated.length} files successfully!`, 'system');
+              } else {
+                addChatMessage(`Applied ${results.filesCreated.length} files successfully!`, 'system', {
+                  appliedFiles: results.filesCreated
+                });
+              }
+            }
+
+            // If there are failed packages, add a message about checking for errors
+            if (results.packagesFailed?.length > 0) {
+              addChatMessage(`⚠️ Some packages failed to install. Check the error banner above for details.`, 'system');
+            }
+
+            // Fetch updated file structure
+            await fetchSandboxFiles();
+
+            // Automatically check and install any missing packages
+            await checkAndInstallPackages();
+
+            // Test build to ensure everything compiles correctly
+            // Skip build test for now - it's causing errors with undefined activeSandbox
+            // The build test was trying to access global.activeSandbox from the frontend,
+            // but that's only available in the backend API routes
+            console.log('[build-test] Skipping build test - would need API endpoint');
+
+            // Force iframe refresh after applying code
+            const refreshDelay = appConfig.codeApplication.defaultRefreshDelay; // Allow Vite to process changes
+
+            setTimeout(() => {
+              if (iframeRef.current && sandboxData?.url) {
+                console.log('[home] Refreshing iframe after code application...');
+
+                // Method 1: Change src with timestamp
+                const urlWithTimestamp = `${sandboxData.url}?t=${Date.now()}&applied=true`;
+                iframeRef.current.src = urlWithTimestamp;
+
+                // Method 2: Force reload after a short delay
+                setTimeout(() => {
+                  try {
+                    if (iframeRef.current?.contentWindow) {
+                      iframeRef.current.contentWindow.location.reload();
+                      console.log('[home] Force reloaded iframe content');
+                    }
+                  } catch (e) {
+                    console.log('[home] Could not reload iframe (cross-origin):', e);
+                  }
+                }, 1000);
+              }
+            }, refreshDelay);
+
+            // Vite error checking removed - handled by template setup
+          }
+
           // Give Vite HMR a moment to detect changes, then ensure refresh
           if (iframeRef.current && sandboxData?.url) {
             // Wait for Vite to process the file changes
@@ -848,74 +850,74 @@ Tip: I automatically detect and install npm packages from your code imports (lik
             const packagesInstalled = results?.packagesInstalled?.length > 0 || data.results?.packagesInstalled?.length > 0;
             const refreshDelay = packagesInstalled ? appConfig.codeApplication.packageInstallRefreshDelay : appConfig.codeApplication.defaultRefreshDelay;
             console.log(`[applyGeneratedCode] Packages installed: ${packagesInstalled}, refresh delay: ${refreshDelay}ms`);
-            
+
             setTimeout(async () => {
-            if (iframeRef.current && sandboxData?.url) {
-              console.log('[applyGeneratedCode] Starting iframe refresh sequence...');
-              console.log('[applyGeneratedCode] Current iframe src:', iframeRef.current.src);
-              console.log('[applyGeneratedCode] Sandbox URL:', sandboxData.url);
-              
-              // Method 1: Try direct navigation first
-              try {
-                const urlWithTimestamp = `${sandboxData.url}?t=${Date.now()}&force=true`;
-                console.log('[applyGeneratedCode] Attempting direct navigation to:', urlWithTimestamp);
-                
-                // Remove any existing onload handler
-                iframeRef.current.onload = null;
-                
-                // Navigate directly
-                iframeRef.current.src = urlWithTimestamp;
-                
-                // Wait a bit and check if it loaded
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                
-                // Try to access the iframe content to verify it loaded
+              if (iframeRef.current && sandboxData?.url) {
+                console.log('[applyGeneratedCode] Starting iframe refresh sequence...');
+                console.log('[applyGeneratedCode] Current iframe src:', iframeRef.current.src);
+                console.log('[applyGeneratedCode] Sandbox URL:', sandboxData.url);
+
+                // Method 1: Try direct navigation first
                 try {
-                  const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
-                  if (iframeDoc && iframeDoc.readyState === 'complete') {
-                    console.log('[applyGeneratedCode] Iframe loaded successfully');
+                  const urlWithTimestamp = `${sandboxData.url}?t=${Date.now()}&force=true`;
+                  console.log('[applyGeneratedCode] Attempting direct navigation to:', urlWithTimestamp);
+
+                  // Remove any existing onload handler
+                  iframeRef.current.onload = null;
+
+                  // Navigate directly
+                  iframeRef.current.src = urlWithTimestamp;
+
+                  // Wait a bit and check if it loaded
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+
+                  // Try to access the iframe content to verify it loaded
+                  try {
+                    const iframeDoc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
+                    if (iframeDoc && iframeDoc.readyState === 'complete') {
+                      console.log('[applyGeneratedCode] Iframe loaded successfully');
+                      return;
+                    }
+                  } catch (e) {
+                    console.log('[applyGeneratedCode] Cannot access iframe content (CORS), assuming loaded');
                     return;
                   }
                 } catch (e) {
-                  console.log('[applyGeneratedCode] Cannot access iframe content (CORS), assuming loaded');
-                  return;
+                  console.error('[applyGeneratedCode] Direct navigation failed:', e);
                 }
-              } catch (e) {
-                console.error('[applyGeneratedCode] Direct navigation failed:', e);
+
+                // Method 2: Force complete iframe recreation if direct navigation failed
+                console.log('[applyGeneratedCode] Falling back to iframe recreation...');
+                const parent = iframeRef.current.parentElement;
+                const newIframe = document.createElement('iframe');
+
+                // Copy attributes
+                newIframe.className = iframeRef.current.className;
+                newIframe.title = iframeRef.current.title;
+                newIframe.allow = iframeRef.current.allow;
+                // Copy sandbox attributes
+                const sandboxValue = iframeRef.current.getAttribute('sandbox');
+                if (sandboxValue) {
+                  newIframe.setAttribute('sandbox', sandboxValue);
+                }
+
+                // Remove old iframe
+                iframeRef.current.remove();
+
+                // Add new iframe
+                newIframe.src = `${sandboxData.url}?t=${Date.now()}&recreated=true`;
+                parent?.appendChild(newIframe);
+
+                // Update ref
+                (iframeRef as any).current = newIframe;
+
+                console.log('[applyGeneratedCode] Iframe recreated with new content');
+              } else {
+                console.error('[applyGeneratedCode] No iframe or sandbox URL available for refresh');
               }
-              
-              // Method 2: Force complete iframe recreation if direct navigation failed
-              console.log('[applyGeneratedCode] Falling back to iframe recreation...');
-              const parent = iframeRef.current.parentElement;
-              const newIframe = document.createElement('iframe');
-              
-              // Copy attributes
-              newIframe.className = iframeRef.current.className;
-              newIframe.title = iframeRef.current.title;
-              newIframe.allow = iframeRef.current.allow;
-              // Copy sandbox attributes
-              const sandboxValue = iframeRef.current.getAttribute('sandbox');
-              if (sandboxValue) {
-                newIframe.setAttribute('sandbox', sandboxValue);
-              }
-              
-              // Remove old iframe
-              iframeRef.current.remove();
-              
-              // Add new iframe
-              newIframe.src = `${sandboxData.url}?t=${Date.now()}&recreated=true`;
-              parent?.appendChild(newIframe);
-              
-              // Update ref
-              (iframeRef as any).current = newIframe;
-              
-              console.log('[applyGeneratedCode] Iframe recreated with new content');
-            } else {
-              console.error('[applyGeneratedCode] No iframe or sandbox URL available for refresh');
-            }
-          }, refreshDelay); // Dynamic delay based on whether packages were installed
-        }
-        
+            }, refreshDelay); // Dynamic delay based on whether packages were installed
+          }
+
         } else {
           throw new Error(finalData?.error || 'Failed to apply code');
         }
@@ -937,7 +939,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
 
   const fetchSandboxFiles = async () => {
     if (!sandboxData) return;
-    
+
     try {
       const response = await fetch('/api/get-sandbox-files', {
         method: 'GET',
@@ -945,7 +947,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           'Content-Type': 'application/json',
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
@@ -958,21 +960,21 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       console.error('[fetchSandboxFiles] Error fetching files:', error);
     }
   };
-  
+
   const restartViteServer = async () => {
     try {
       addChatMessage('Restarting Vite dev server...', 'system');
-      
+
       const response = await fetch('/api/restart-vite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
           addChatMessage('✓ Vite dev server restarted successfully!', 'system');
-          
+
           // Refresh the iframe after a short delay
           setTimeout(() => {
             if (iframeRef.current && sandboxData?.url) {
@@ -998,13 +1000,13 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       addChatMessage('No code to apply. Please generate code first.', 'system');
       return;
     }
-    
+
     // Prevent double clicks
     if (loading) {
       console.log('[applyCode] Already loading, skipping...');
       return;
     }
-    
+
     // Determine if this is an edit based on whether we have applied code before
     const isEdit = conversationContext.appliedCode.length > 0;
     await applyGeneratedCode(code, isEdit);
@@ -1018,120 +1020,118 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           {/* File Explorer - Hide during edits */}
           {!generationProgress.isEdit && (
             <div className="w-[250px] border-r border-gray-200 bg-white flex flex-col flex-shrink-0">
-            <div className="p-3 bg-gray-100 text-gray-900 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BsFolderFill className="w-4 h-4" />
-                <span className="text-sm font-medium">Explorer</span>
-              </div>
-            </div>
-            
-            {/* File Tree */}
-            <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-              <div className="text-sm">
-                {/* Root app folder */}
-                <div 
-                  className="flex items-center gap-1 py-1 px-2 hover:bg-gray-100 rounded cursor-pointer text-gray-700"
-                  onClick={() => toggleFolder('app')}
-                >
-                  {expandedFolders.has('app') ? (
-                    <FiChevronDown className="w-4 h-4 text-gray-600" />
-                  ) : (
-                    <FiChevronRight className="w-4 h-4 text-gray-600" />
-                  )}
-                  {expandedFolders.has('app') ? (
-                    <BsFolder2Open className="w-4 h-4 text-blue-500" />
-                  ) : (
-                    <BsFolderFill className="w-4 h-4 text-blue-500" />
-                  )}
-                  <span className="font-medium text-gray-800">app</span>
+              <div className="p-3 bg-gray-100 text-gray-900 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BsFolderFill className="w-4 h-4" />
+                  <span className="text-sm font-medium">Explorer</span>
                 </div>
-                
-                {expandedFolders.has('app') && (
-                  <div className="ml-4">
-                    {/* Group files by directory */}
-                    {(() => {
-                      const fileTree: { [key: string]: Array<{ name: string; edited?: boolean }> } = {};
-                      
-                      // Create a map of edited files
-                      const editedFiles = new Set(
-                        generationProgress.files
-                          .filter(f => f.edited)
-                          .map(f => f.path)
-                      );
-                      
-                      // Process all files from generation progress
-                      generationProgress.files.forEach(file => {
-                        const parts = file.path.split('/');
-                        const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
-                        const fileName = parts[parts.length - 1];
-                        
-                        if (!fileTree[dir]) fileTree[dir] = [];
-                        fileTree[dir].push({
-                          name: fileName,
-                          edited: file.edited || false
-                        });
-                      });
-                      
-                      return Object.entries(fileTree).map(([dir, files]) => (
-                        <div key={dir} className="mb-1">
-                          {dir && (
-                            <div 
-                              className="flex items-center gap-1 py-1 px-2 hover:bg-gray-100 rounded cursor-pointer text-gray-700"
-                              onClick={() => toggleFolder(dir)}
-                            >
-                              {expandedFolders.has(dir) ? (
-                                <FiChevronDown className="w-4 h-4 text-gray-600" />
-                              ) : (
-                                <FiChevronRight className="w-4 h-4 text-gray-600" />
-                              )}
-                              {expandedFolders.has(dir) ? (
-                                <BsFolder2Open className="w-4 h-4 text-yellow-600" />
-                              ) : (
-                                <BsFolderFill className="w-4 h-4 text-yellow-600" />
-                              )}
-                              <span className="text-gray-700">{dir.split('/').pop()}</span>
-                            </div>
-                          )}
-                          {(!dir || expandedFolders.has(dir)) && (
-                            <div className={dir ? 'ml-6' : ''}>
-                              {files.sort((a, b) => a.name.localeCompare(b.name)).map(fileInfo => {
-                                const fullPath = dir ? `${dir}/${fileInfo.name}` : fileInfo.name;
-                                const isSelected = selectedFile === fullPath;
-                                
-                                return (
-                                  <div 
-                                    key={fullPath} 
-                                    className={`flex items-center gap-2 py-1 px-2 rounded cursor-pointer transition-all ${
-                                      isSelected 
-                                        ? 'bg-blue-500 text-white' 
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                    onClick={() => handleFileClick(fullPath)}
-                                  >
-                                    {getFileIcon(fileInfo.name)}
-                                    <span className={`text-xs flex items-center gap-1 ${isSelected ? 'font-medium' : ''}`}>
-                                      {fileInfo.name}
-                                      {fileInfo.edited && (
-                                        <span className={`text-[10px] px-1 rounded ${
-                                          isSelected ? 'bg-blue-400' : 'bg-orange-500 text-white'
-                                        }`}>✓</span>
-                                      )}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      ));
-                    })()}
+              </div>
+
+              {/* File Tree */}
+              <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
+                <div className="text-sm">
+                  {/* Root app folder */}
+                  <div
+                    className="flex items-center gap-1 py-1 px-2 hover:bg-gray-100 rounded cursor-pointer text-gray-700"
+                    onClick={() => toggleFolder('app')}
+                  >
+                    {expandedFolders.has('app') ? (
+                      <FiChevronDown className="w-4 h-4 text-gray-600" />
+                    ) : (
+                      <FiChevronRight className="w-4 h-4 text-gray-600" />
+                    )}
+                    {expandedFolders.has('app') ? (
+                      <BsFolder2Open className="w-4 h-4 text-blue-500" />
+                    ) : (
+                      <BsFolderFill className="w-4 h-4 text-blue-500" />
+                    )}
+                    <span className="font-medium text-gray-800">app</span>
                   </div>
-                )}
+
+                  {expandedFolders.has('app') && (
+                    <div className="ml-4">
+                      {/* Group files by directory */}
+                      {(() => {
+                        const fileTree: { [key: string]: Array<{ name: string; edited?: boolean }> } = {};
+
+                        // Create a map of edited files
+                        const editedFiles = new Set(
+                          generationProgress.files
+                            .filter(f => f.edited)
+                            .map(f => f.path)
+                        );
+
+                        // Process all files from generation progress
+                        generationProgress.files.forEach(file => {
+                          const parts = file.path.split('/');
+                          const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+                          const fileName = parts[parts.length - 1];
+
+                          if (!fileTree[dir]) fileTree[dir] = [];
+                          fileTree[dir].push({
+                            name: fileName,
+                            edited: file.edited || false
+                          });
+                        });
+
+                        return Object.entries(fileTree).map(([dir, files]) => (
+                          <div key={dir} className="mb-1">
+                            {dir && (
+                              <div
+                                className="flex items-center gap-1 py-1 px-2 hover:bg-gray-100 rounded cursor-pointer text-gray-700"
+                                onClick={() => toggleFolder(dir)}
+                              >
+                                {expandedFolders.has(dir) ? (
+                                  <FiChevronDown className="w-4 h-4 text-gray-600" />
+                                ) : (
+                                  <FiChevronRight className="w-4 h-4 text-gray-600" />
+                                )}
+                                {expandedFolders.has(dir) ? (
+                                  <BsFolder2Open className="w-4 h-4 text-yellow-600" />
+                                ) : (
+                                  <BsFolderFill className="w-4 h-4 text-yellow-600" />
+                                )}
+                                <span className="text-gray-700">{dir.split('/').pop()}</span>
+                              </div>
+                            )}
+                            {(!dir || expandedFolders.has(dir)) && (
+                              <div className={dir ? 'ml-6' : ''}>
+                                {files.sort((a, b) => a.name.localeCompare(b.name)).map(fileInfo => {
+                                  const fullPath = dir ? `${dir}/${fileInfo.name}` : fileInfo.name;
+                                  const isSelected = selectedFile === fullPath;
+
+                                  return (
+                                    <div
+                                      key={fullPath}
+                                      className={`flex items-center gap-2 py-1 px-2 rounded cursor-pointer transition-all ${isSelected
+                                        ? 'bg-blue-500 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                      onClick={() => handleFileClick(fullPath)}
+                                    >
+                                      {getFileIcon(fileInfo.name)}
+                                      <span className={`text-xs flex items-center gap-1 ${isSelected ? 'font-medium' : ''}`}>
+                                        {fileInfo.name}
+                                        {fileInfo.edited && (
+                                          <span className={`text-[10px] px-1 rounded ${isSelected ? 'bg-blue-400' : 'bg-orange-500 text-white'
+                                            }`}>✓</span>
+                                        )}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
           )}
-          
+
           {/* Code Content */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Thinking Mode Display - Only show during active generation */}
@@ -1161,7 +1161,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                 )}
               </div>
             )}
-            
+
             {/* Live Code Display */}
             <div className="flex-1 rounded-lg p-6 flex flex-col min-h-0 overflow-hidden">
               <div className="flex-1 overflow-y-auto min-h-0 scrollbar-hide" ref={codeDisplayRef}>
@@ -1211,179 +1211,177 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                     </div>
                   </div>
                 ) : /* If no files parsed yet, show loading or raw stream */
-                generationProgress.files.length === 0 && !generationProgress.currentFile ? (
-                  generationProgress.isThinking ? (
-                    // Beautiful loading state while thinking
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center">
-                        <div className="mb-8 relative">
-                          <div className="w-24 h-24 mx-auto">
-                            <div className="absolute inset-0 border-4 border-gray-800 rounded-full"></div>
-                            <div className="absolute inset-0 border-4 border-green-500 rounded-full animate-spin border-t-transparent"></div>
+                  generationProgress.files.length === 0 && !generationProgress.currentFile ? (
+                    generationProgress.isThinking ? (
+                      // Beautiful loading state while thinking
+                      <div className="flex items-center justify-center h-full">
+                        <div className="text-center">
+                          <div className="mb-8 relative">
+                            <div className="w-24 h-24 mx-auto">
+                              <div className="absolute inset-0 border-4 border-gray-800 rounded-full"></div>
+                              <div className="absolute inset-0 border-4 border-green-500 rounded-full animate-spin border-t-transparent"></div>
+                            </div>
                           </div>
-                        </div>
-                        <h3 className="text-xl font-medium text-white mb-2">AI is analyzing your request</h3>
-                        <p className="text-gray-400 text-sm">{generationProgress.status || 'Preparing to generate code...'}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-black border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="px-4 py-2 bg-gray-100 text-gray-900 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                          <span className="font-mono text-sm">Streaming code...</span>
+                          <h3 className="text-xl font-medium text-white mb-2">AI is analyzing your request</h3>
+                          <p className="text-gray-400 text-sm">{generationProgress.status || 'Preparing to generate code...'}</p>
                         </div>
                       </div>
-                      <div className="p-4 bg-gray-900 rounded">
-                        <SyntaxHighlighter
-                          language="jsx"
-                          style={vscDarkPlus}
-                          customStyle={{
-                            margin: 0,
-                            padding: '1rem',
-                            fontSize: '0.875rem',
-                            background: 'transparent',
-                          }}
-                          showLineNumbers={true}
-                        >
-                          {generationProgress.streamedCode || 'Starting code generation...'}
-                        </SyntaxHighlighter>
-                        <span className="inline-block w-2 h-4 bg-orange-400 ml-1 animate-pulse" />
-                      </div>
-                    </div>
-                  )
-                ) : (
-                  <div className="space-y-4">
-                    {/* Show current file being generated */}
-                    {generationProgress.currentFile && (
-                      <div className="bg-black border-2 border-gray-400 rounded-lg overflow-hidden shadow-sm">
-                        <div className="px-4 py-2 bg-[#36322F] text-white flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            <span className="font-mono text-sm">{generationProgress.currentFile.path}</span>
-                            <span className={`px-2 py-0.5 text-xs rounded ${
-                              generationProgress.currentFile.type === 'css' ? 'bg-blue-600 text-white' :
-                              generationProgress.currentFile.type === 'javascript' ? 'bg-yellow-600 text-white' :
-                              generationProgress.currentFile.type === 'json' ? 'bg-green-600 text-white' :
-                              'bg-gray-200 text-gray-700'
-                            }`}>
-                              {generationProgress.currentFile.type === 'javascript' ? 'JSX' : generationProgress.currentFile.type.toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="bg-gray-900 border border-gray-700 rounded">
-                          <SyntaxHighlighter
-                            language={
-                              generationProgress.currentFile.type === 'css' ? 'css' :
-                              generationProgress.currentFile.type === 'json' ? 'json' :
-                              generationProgress.currentFile.type === 'html' ? 'html' :
-                              'jsx'
-                            }
-                            style={vscDarkPlus}
-                            customStyle={{
-                              margin: 0,
-                              padding: '1rem',
-                              fontSize: '0.75rem',
-                              background: 'transparent',
-                            }}
-                            showLineNumbers={true}
-                          >
-                            {generationProgress.currentFile.content}
-                          </SyntaxHighlighter>
-                          <span className="inline-block w-2 h-3 bg-orange-400 ml-4 mb-4 animate-pulse" />
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Show completed files */}
-                    {generationProgress.files.map((file, idx) => (
-                      <div key={idx} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="px-4 py-2 bg-[#36322F] text-white flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-green-500">✓</span>
-                            <span className="font-mono text-sm">{file.path}</span>
-                          </div>
-                          <span className={`px-2 py-0.5 text-xs rounded ${
-                            file.type === 'css' ? 'bg-blue-600 text-white' :
-                            file.type === 'javascript' ? 'bg-yellow-600 text-white' :
-                            file.type === 'json' ? 'bg-green-600 text-white' :
-                            'bg-gray-200 text-gray-700'
-                          }`}>
-                            {file.type === 'javascript' ? 'JSX' : file.type.toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="bg-gray-900 border border-gray-700  max-h-48 overflow-y-auto scrollbar-hide">
-                          <SyntaxHighlighter
-                            language={
-                              file.type === 'css' ? 'css' :
-                              file.type === 'json' ? 'json' :
-                              file.type === 'html' ? 'html' :
-                              'jsx'
-                            }
-                            style={vscDarkPlus}
-                            customStyle={{
-                              margin: 0,
-                              padding: '1rem',
-                              fontSize: '0.75rem',
-                              background: 'transparent',
-                            }}
-                            showLineNumbers={true}
-                            wrapLongLines={true}
-                          >
-                            {file.content}
-                          </SyntaxHighlighter>
-                        </div>
-                      </div>
-                    ))}
-                    
-                    {/* Show remaining raw stream if there's content after the last file */}
-                    {!generationProgress.currentFile && generationProgress.streamedCode.length > 0 && (
+                    ) : (
                       <div className="bg-black border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="px-4 py-2 bg-[#36322F] text-white flex items-center justify-between">
+                        <div className="px-4 py-2 bg-gray-100 text-gray-900 flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                            <span className="font-mono text-sm">Processing...</span>
+                            <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                            <span className="font-mono text-sm">Streaming code...</span>
                           </div>
                         </div>
-                        <div className="bg-gray-900 border border-gray-700 rounded">
+                        <div className="p-4 bg-gray-900 rounded">
                           <SyntaxHighlighter
                             language="jsx"
                             style={vscDarkPlus}
                             customStyle={{
                               margin: 0,
                               padding: '1rem',
-                              fontSize: '0.75rem',
+                              fontSize: '0.875rem',
                               background: 'transparent',
                             }}
-                            showLineNumbers={false}
+                            showLineNumbers={true}
                           >
-                            {(() => {
-                              // Show only the tail of the stream after the last file
-                              const lastFileEnd = generationProgress.files.length > 0 
-                                ? generationProgress.streamedCode.lastIndexOf('</file>') + 7
-                                : 0;
-                              let remainingContent = generationProgress.streamedCode.slice(lastFileEnd).trim();
-                              
-                              // Remove explanation tags and content
-                              remainingContent = remainingContent.replace(/<explanation>[\s\S]*?<\/explanation>/g, '').trim();
-                              
-                              // If only whitespace or nothing left, show waiting message
-                              return remainingContent || 'Waiting for next file...';
-                            })()}
+                            {generationProgress.streamedCode || 'Starting code generation...'}
                           </SyntaxHighlighter>
+                          <span className="inline-block w-2 h-4 bg-orange-400 ml-1 animate-pulse" />
                         </div>
                       </div>
-                    )}
-                  </div>
-                )}
+                    )
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Show current file being generated */}
+                      {generationProgress.currentFile && (
+                        <div className="bg-black border-2 border-gray-400 rounded-lg overflow-hidden shadow-sm">
+                          <div className="px-4 py-2 bg-[#36322F] text-white flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span className="font-mono text-sm">{generationProgress.currentFile.path}</span>
+                              <span className={`px-2 py-0.5 text-xs rounded ${generationProgress.currentFile.type === 'css' ? 'bg-blue-600 text-white' :
+                                generationProgress.currentFile.type === 'javascript' ? 'bg-yellow-600 text-white' :
+                                  generationProgress.currentFile.type === 'json' ? 'bg-green-600 text-white' :
+                                    'bg-gray-200 text-gray-700'
+                                }`}>
+                                {generationProgress.currentFile.type === 'javascript' ? 'JSX' : generationProgress.currentFile.type.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="bg-gray-900 border border-gray-700 rounded">
+                            <SyntaxHighlighter
+                              language={
+                                generationProgress.currentFile.type === 'css' ? 'css' :
+                                  generationProgress.currentFile.type === 'json' ? 'json' :
+                                    generationProgress.currentFile.type === 'html' ? 'html' :
+                                      'jsx'
+                              }
+                              style={vscDarkPlus}
+                              customStyle={{
+                                margin: 0,
+                                padding: '1rem',
+                                fontSize: '0.75rem',
+                                background: 'transparent',
+                              }}
+                              showLineNumbers={true}
+                            >
+                              {generationProgress.currentFile.content}
+                            </SyntaxHighlighter>
+                            <span className="inline-block w-2 h-3 bg-orange-400 ml-4 mb-4 animate-pulse" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Show completed files */}
+                      {generationProgress.files.map((file, idx) => (
+                        <div key={idx} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="px-4 py-2 bg-[#36322F] text-white flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-green-500">✓</span>
+                              <span className="font-mono text-sm">{file.path}</span>
+                            </div>
+                            <span className={`px-2 py-0.5 text-xs rounded ${file.type === 'css' ? 'bg-blue-600 text-white' :
+                              file.type === 'javascript' ? 'bg-yellow-600 text-white' :
+                                file.type === 'json' ? 'bg-green-600 text-white' :
+                                  'bg-gray-200 text-gray-700'
+                              }`}>
+                              {file.type === 'javascript' ? 'JSX' : file.type.toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="bg-gray-900 border border-gray-700  max-h-48 overflow-y-auto scrollbar-hide">
+                            <SyntaxHighlighter
+                              language={
+                                file.type === 'css' ? 'css' :
+                                  file.type === 'json' ? 'json' :
+                                    file.type === 'html' ? 'html' :
+                                      'jsx'
+                              }
+                              style={vscDarkPlus}
+                              customStyle={{
+                                margin: 0,
+                                padding: '1rem',
+                                fontSize: '0.75rem',
+                                background: 'transparent',
+                              }}
+                              showLineNumbers={true}
+                              wrapLongLines={true}
+                            >
+                              {file.content}
+                            </SyntaxHighlighter>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Show remaining raw stream if there's content after the last file */}
+                      {!generationProgress.currentFile && generationProgress.streamedCode.length > 0 && (
+                        <div className="bg-black border border-gray-200 rounded-lg overflow-hidden">
+                          <div className="px-4 py-2 bg-[#36322F] text-white flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                              <span className="font-mono text-sm">Processing...</span>
+                            </div>
+                          </div>
+                          <div className="bg-gray-900 border border-gray-700 rounded">
+                            <SyntaxHighlighter
+                              language="jsx"
+                              style={vscDarkPlus}
+                              customStyle={{
+                                margin: 0,
+                                padding: '1rem',
+                                fontSize: '0.75rem',
+                                background: 'transparent',
+                              }}
+                              showLineNumbers={false}
+                            >
+                              {(() => {
+                                // Show only the tail of the stream after the last file
+                                const lastFileEnd = generationProgress.files.length > 0
+                                  ? generationProgress.streamedCode.lastIndexOf('</file>') + 7
+                                  : 0;
+                                let remainingContent = generationProgress.streamedCode.slice(lastFileEnd).trim();
+
+                                // Remove explanation tags and content
+                                remainingContent = remainingContent.replace(/<explanation>[\s\S]*?<\/explanation>/g, '').trim();
+
+                                // If only whitespace or nothing left, show waiting message
+                                return remainingContent || 'Waiting for next file...';
+                              })()}
+                            </SyntaxHighlighter>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
             </div>
-            
+
             {/* Progress indicator */}
             {generationProgress.components.length > 0 && (
               <div className="mx-6 mb-6">
                 <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-orange-500 to-orange-400 transition-all duration-300"
                     style={{
                       width: `${(generationProgress.currentComponent / Math.max(generationProgress.components.length, 1)) * 100}%`
@@ -1400,9 +1398,9 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       if (urlScreenshot && (loading || generationProgress.isGenerating || !sandboxData?.url || isPreparingDesign)) {
         return (
           <div className="relative w-full h-full bg-gray-100">
-            <img 
-              src={urlScreenshot} 
-              alt="Website preview" 
+            <img
+              src={urlScreenshot}
+              alt="Website preview"
               className="w-full h-full object-contain"
             />
             {(generationProgress.isGenerating || isPreparingDesign) && (
@@ -1418,7 +1416,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           </div>
         );
       }
-      
+
       // Check loading stage FIRST to prevent showing old sandbox
       // Don't show loading overlay for edits
       if (loadingStage || (generationProgress.isGenerating && !generationProgress.isEdit)) {
@@ -1442,7 +1440,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           </div>
         );
       }
-      
+
       // Show sandbox iframe only when not in any loading state
       if (sandboxData?.url && !loading) {
         return (
@@ -1474,7 +1472,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           </div>
         );
       }
-      
+
       // Show loading animation when capturing screenshot
       if (isCapturingScreenshot) {
         return (
@@ -1486,7 +1484,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           </div>
         );
       }
-      
+
       // Default state when no sandbox and no screenshot
       return (
         <div className="flex items-center justify-center h-full bg-gray-50 text-gray-600 text-lg">
@@ -1514,15 +1512,15 @@ Tip: I automatically detect and install npm packages from your code imports (lik
   const sendChatMessage = async () => {
     const message = aiChatInput.trim();
     if (!message) return;
-    
+
     if (!aiEnabled) {
       addChatMessage('AI is disabled. Please enable it first.', 'system');
       return;
     }
-    
+
     addChatMessage(message, 'user');
     setAiChatInput('');
-    
+
     // Check for special commands
     const lowerMessage = message.toLowerCase().trim();
     if (lowerMessage === 'check packages' || lowerMessage === 'install packages' || lowerMessage === 'npm install') {
@@ -1533,11 +1531,11 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       await checkAndInstallPackages();
       return;
     }
-    
+
     // Start sandbox creation in parallel if needed
     let sandboxPromise: Promise<void> | null = null;
     let sandboxCreating = false;
-    
+
     if (!sandboxData) {
       sandboxCreating = true;
       addChatMessage('Creating sandbox while I plan your app...', 'system');
@@ -1546,10 +1544,10 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         throw error;
       });
     }
-    
+
     // Determine if this is an edit
     const isEdit = conversationContext.appliedCode.length > 0;
-    
+
     try {
       // Generation tab is already active from scraping phase
       setGenerationProgress(prev => ({
@@ -1570,10 +1568,10 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         // Keep existing files for edits - we'll mark edited ones differently
         files: prev.files
       }));
-      
+
       // Backend now manages file state - no need to fetch from frontend
       console.log('[chat] Using backend file cache for context');
-      
+
       const fullContext = {
         sandboxId: sandboxData?.sandboxId || (sandboxCreating ? 'pending' : null),
         structure: structureContent,
@@ -1583,12 +1581,12 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         sandboxUrl: sandboxData?.url,
         sandboxCreating: sandboxCreating
       };
-      
+
       // Debug what we're sending
       console.log('[chat] Sending context to AI:');
       console.log('[chat] - sandboxId:', fullContext.sandboxId);
       console.log('[chat] - isEdit:', conversationContext.appliedCode.length > 0);
-      
+
       const response = await fetch('/api/generate-ai-code-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1599,91 +1597,91 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           isEdit: conversationContext.appliedCode.length > 0
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let generatedCode = '';
       let explanation = '';
-      
+
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n');
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                
+
                 if (data.type === 'status') {
                   setGenerationProgress(prev => ({ ...prev, status: data.message }));
                 } else if (data.type === 'thinking') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: true,
                     thinkingText: (prev.thinkingText || '') + data.text
                   }));
                 } else if (data.type === 'thinking_complete') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: false,
                     thinkingDuration: data.duration
                   }));
                 } else if (data.type === 'conversation') {
                   // Add conversational text to chat only if it's not code
                   let text = data.text || '';
-                  
+
                   // Remove package tags from the text
                   text = text.replace(/<package>[^<]*<\/package>/g, '');
                   text = text.replace(/<packages>[^<]*<\/packages>/g, '');
-                  
+
                   // Filter out any XML tags and file content that slipped through
-                  if (!text.includes('<file') && !text.includes('import React') && 
-                      !text.includes('export default') && !text.includes('className=') &&
-                      text.trim().length > 0) {
+                  if (!text.includes('<file') && !text.includes('import React') &&
+                    !text.includes('export default') && !text.includes('className=') &&
+                    text.trim().length > 0) {
                     addChatMessage(text.trim(), 'ai');
                   }
                 } else if (data.type === 'stream' && data.raw) {
                   setGenerationProgress(prev => {
                     const newStreamedCode = prev.streamedCode + data.text;
-                    
+
                     // Tab is already switched after scraping
-                    
-                    const updatedState = { 
-                      ...prev, 
+
+                    const updatedState = {
+                      ...prev,
                       streamedCode: newStreamedCode,
                       isStreaming: true,
                       isThinking: false,
                       status: 'Generating code...'
                     };
-                    
+
                     // Process complete files from the accumulated stream
                     const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
                     let match;
                     const processedFiles = new Set(prev.files.map(f => f.path));
-                    
+
                     while ((match = fileRegex.exec(newStreamedCode)) !== null) {
                       const filePath = match[1];
                       const fileContent = match[2];
-                      
+
                       // Only add if we haven't processed this file yet
                       if (!processedFiles.has(filePath)) {
                         const fileExt = filePath.split('.').pop() || '';
                         const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
+                          fileExt === 'css' ? 'css' :
+                            fileExt === 'json' ? 'json' :
+                              fileExt === 'html' ? 'html' : 'text';
+
                         // Check if file already exists
                         const existingFileIndex = updatedState.files.findIndex(f => f.path === filePath);
-                        
+
                         if (existingFileIndex >= 0) {
                           // Update existing file and mark as edited
                           updatedState.files = [
@@ -1707,7 +1705,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                             edited: false
                           }];
                         }
-                        
+
                         // Only show file status if not in edit mode
                         if (!prev.isEdit) {
                           updatedState.status = `Completed ${filePath}`;
@@ -1715,24 +1713,24 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                         processedFiles.add(filePath);
                       }
                     }
-                    
+
                     // Check for current file being generated (incomplete file at the end)
                     const lastFileMatch = newStreamedCode.match(/<file path="([^"]+)">([^]*?)$/);
                     if (lastFileMatch && !lastFileMatch[0].includes('</file>')) {
                       const filePath = lastFileMatch[1];
                       const partialContent = lastFileMatch[2];
-                      
+
                       if (!processedFiles.has(filePath)) {
                         const fileExt = filePath.split('.').pop() || '';
                         const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
-                        updatedState.currentFile = { 
-                          path: filePath, 
-                          content: partialContent, 
-                          type: fileType 
+                          fileExt === 'css' ? 'css' :
+                            fileExt === 'json' ? 'json' :
+                              fileExt === 'html' ? 'html' : 'text';
+
+                        updatedState.currentFile = {
+                          path: filePath,
+                          content: partialContent,
+                          type: fileType
                         };
                         // Only show file status if not in edit mode
                         if (!prev.isEdit) {
@@ -1742,22 +1740,22 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                     } else {
                       updatedState.currentFile = undefined;
                     }
-                    
+
                     return updatedState;
                   });
                 } else if (data.type === 'app') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     status: 'Generated App.jsx structure'
                   }));
                 } else if (data.type === 'component') {
                   setGenerationProgress(prev => ({
                     ...prev,
                     status: `Generated ${data.name}`,
-                    components: [...prev.components, { 
-                      name: data.name, 
-                      path: data.path, 
-                      completed: true 
+                    components: [...prev.components, {
+                      name: data.name,
+                      path: data.path,
+                      completed: true
                     }],
                     currentComponent: data.index
                   }));
@@ -1770,13 +1768,13 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                 } else if (data.type === 'complete') {
                   generatedCode = data.generatedCode;
                   explanation = data.explanation;
-                  
+
                   // Save the last generated code
                   setConversationContext(prev => ({
                     ...prev,
                     lastGeneratedCode: generatedCode
                   }));
-                  
+
                   // Clear thinking state when generation completes
                   setGenerationProgress(prev => ({
                     ...prev,
@@ -1784,28 +1782,28 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                     thinkingText: undefined,
                     thinkingDuration: undefined
                   }));
-                  
+
                   // Store packages to install from tool calls
                   if (data.packagesToInstall && data.packagesToInstall.length > 0) {
                     console.log('[generate-code] Packages to install from tools:', data.packagesToInstall);
                     // Store packages globally for later installation
                     (window as any).pendingPackages = data.packagesToInstall;
                   }
-                  
+
                   // Parse all files from the completed code if not already done
                   const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
-                  const parsedFiles: Array<{path: string; content: string; type: string; completed: boolean}> = [];
+                  const parsedFiles: Array<{ path: string; content: string; type: string; completed: boolean }> = [];
                   let fileMatch;
-                  
+
                   while ((fileMatch = fileRegex.exec(data.generatedCode)) !== null) {
                     const filePath = fileMatch[1];
                     const fileContent = fileMatch[2];
                     const fileExt = filePath.split('.').pop() || '';
                     const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                    fileExt === 'css' ? 'css' :
-                                    fileExt === 'json' ? 'json' :
-                                    fileExt === 'html' ? 'html' : 'text';
-                    
+                      fileExt === 'css' ? 'css' :
+                        fileExt === 'json' ? 'json' :
+                          fileExt === 'html' ? 'html' : 'text';
+
                     parsedFiles.push({
                       path: filePath,
                       content: fileContent.trim(),
@@ -1813,7 +1811,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                       completed: true
                     });
                   }
-                  
+
                   setGenerationProgress(prev => ({
                     ...prev,
                     status: `Generated ${parsedFiles.length > 0 ? parsedFiles.length : prev.files.length} file${(parsedFiles.length > 0 ? parsedFiles.length : prev.files.length) !== 1 ? 's' : ''}!`,
@@ -1833,7 +1831,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           }
         }
       }
-      
+
       if (generatedCode) {
         // Parse files from generated code for metadata
         const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
@@ -1842,7 +1840,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         while ((match = fileRegex.exec(generatedCode)) !== null) {
           generatedFiles.push(match[1]);
         }
-        
+
         // Show appropriate message based on edit mode
         if (isEdit && generatedFiles.length > 0) {
           // For edits, show which file(s) were edited
@@ -1860,11 +1858,11 @@ Tip: I automatically detect and install npm packages from your code imports (lik
             appliedFiles: generatedFiles
           });
         }
-        
+
         setPromptInput(generatedCode);
         // Don't show the Generated Code panel by default
         // setLeftPanelVisible(true);
-        
+
         // Wait for sandbox creation if it's still in progress
         if (sandboxPromise) {
           addChatMessage('Waiting for sandbox to be ready...', 'system');
@@ -1877,13 +1875,13 @@ Tip: I automatically detect and install npm packages from your code imports (lik
             return;
           }
         }
-        
+
         if (sandboxData && generatedCode) {
           // Use isEdit flag that was determined at the start
           await applyGeneratedCode(generatedCode, isEdit);
         }
       }
-      
+
       // Show completion status briefly then switch to preview
       setGenerationProgress(prev => ({
         ...prev,
@@ -1896,7 +1894,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         thinkingText: undefined,
         thinkingDuration: undefined
       }));
-      
+
       setTimeout(() => {
         // Switch to preview but keep files for display
         setActiveTab('preview');
@@ -1929,30 +1927,30 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       addChatMessage('No active sandbox to download. Create a sandbox first!', 'system');
       return;
     }
-    
+
     setLoading(true);
     log('Creating zip file...');
     addChatMessage('Creating ZIP file of your Vite app...', 'system');
-    
+
     try {
       const response = await fetch('/api/create-zip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         log('Zip file created!');
         addChatMessage('ZIP file created! Download starting...', 'system');
-        
+
         const link = document.createElement('a');
         link.href = data.dataUrl;
         link.download = data.fileName || 'e2b-project.zip';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
+
         addChatMessage(
           'Your Vite app has been downloaded! To run it locally:\n' +
           '1. Unzip the file\n' +
@@ -1977,12 +1975,12 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       addChatMessage('No previous generation to re-apply', 'system');
       return;
     }
-    
+
     if (!sandboxData) {
       addChatMessage('Please create a sandbox first', 'system');
       return;
     }
-    
+
     addChatMessage('Re-applying last generation...', 'system');
     const isEdit = conversationContext.appliedCode.length > 0;
     await applyGeneratedCode(conversationContext.lastGeneratedCode, isEdit);
@@ -2012,7 +2010,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
 
   const getFileIcon = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase();
-    
+
     if (ext === 'jsx' || ext === 'js') {
       return <SiJavascript className="w-4 h-4 text-yellow-500" />;
     } else if (ext === 'tsx' || ext === 'ts') {
@@ -2041,22 +2039,22 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       setUrlStatus(prev => [...prev, 'Please enter a URL']);
       return;
     }
-    
+
     if (!url.match(/^https?:\/\//i)) {
       url = 'https://' + url;
     }
-    
+
     setUrlStatus([`Using: ${url}`, 'Starting to scrape...']);
-    
+
     setUrlOverlayVisible(false);
-    
+
     // Remove protocol for cleaner display
     const cleanUrl = url.replace(/^https?:\/\//i, '');
     addChatMessage(`Starting to clone ${cleanUrl}...`, 'system');
-    
+
     // Capture screenshot immediately and switch to preview tab
     captureUrlScreenshot(url);
-    
+
     try {
       addChatMessage('Scraping website content...', 'system');
       const scrapeResponse = await fetch('/api/scrape-url-enhanced', {
@@ -2064,23 +2062,23 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      
+
       if (!scrapeResponse.ok) {
         throw new Error(`Scraping failed: ${scrapeResponse.status}`);
       }
-      
+
       const scrapeData = await scrapeResponse.json();
-      
+
       if (!scrapeData.success) {
         throw new Error(scrapeData.error || 'Failed to scrape website');
       }
-      
+
       addChatMessage(`Scraped ${scrapeData.content.length} characters from ${url}`, 'system');
-      
+
       // Clear preparing design state and switch to generation tab
       setIsPreparingDesign(false);
       setActiveTab('generation');
-      
+
       setConversationContext(prev => ({
         ...prev,
         scrapedWebsites: [...prev.scrapedWebsites, {
@@ -2090,16 +2088,16 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         }],
         currentProject: `Clone of ${url}`
       }));
-      
+
       // Start sandbox creation in parallel with code generation
       let sandboxPromise: Promise<void> | null = null;
       if (!sandboxData) {
         addChatMessage('Creating sandbox while generating your React app...', 'system');
         sandboxPromise = createSandbox(true);
       }
-      
+
       addChatMessage('Analyzing and generating React recreation...', 'system');
-      
+
       const recreatePrompt = `I scraped this website and want you to recreate it as a modern React application.
 
 URL: ${url}
@@ -2146,7 +2144,7 @@ IMAGE HANDLING RULES:
 - Example: If you see "https://example.com/logo.png" in the scraped content, use that exact URL
 
 Focus on the key sections and content, making it clean and modern while preserving visual assets.`;
-      
+
       setGenerationProgress(prev => ({
         isGenerating: true,
         status: 'Initializing AI...',
@@ -2162,10 +2160,10 @@ Focus on the key sections and content, making it clean and modern while preservi
         currentFile: undefined,
         lastProcessedPosition: 0
       }));
-      
+
       // Switch to generation tab when starting
       setActiveTab('generation');
-      
+
       const aiResponse = await fetch('/api/generate-ai-code-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2179,60 +2177,60 @@ Focus on the key sections and content, making it clean and modern while preservi
           }
         })
       });
-      
+
       if (!aiResponse.ok) {
         throw new Error(`AI generation failed: ${aiResponse.status}`);
       }
-      
+
       const reader = aiResponse.body?.getReader();
       const decoder = new TextDecoder();
       let generatedCode = '';
       let explanation = '';
-      
+
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n');
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                
+
                 if (data.type === 'status') {
                   setGenerationProgress(prev => ({ ...prev, status: data.message }));
                 } else if (data.type === 'thinking') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: true,
                     thinkingText: (prev.thinkingText || '') + data.text
                   }));
                 } else if (data.type === 'thinking_complete') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: false,
                     thinkingDuration: data.duration
                   }));
                 } else if (data.type === 'conversation') {
                   // Add conversational text to chat only if it's not code
                   let text = data.text || '';
-                  
+
                   // Remove package tags from the text
                   text = text.replace(/<package>[^<]*<\/package>/g, '');
                   text = text.replace(/<packages>[^<]*<\/packages>/g, '');
-                  
+
                   // Filter out any XML tags and file content that slipped through
-                  if (!text.includes('<file') && !text.includes('import React') && 
-                      !text.includes('export default') && !text.includes('className=') &&
-                      text.trim().length > 0) {
+                  if (!text.includes('<file') && !text.includes('import React') &&
+                    !text.includes('export default') && !text.includes('className=') &&
+                    text.trim().length > 0) {
                     addChatMessage(text.trim(), 'ai');
                   }
                 } else if (data.type === 'stream' && data.raw) {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     streamedCode: prev.streamedCode + data.text,
                     lastProcessedPosition: prev.lastProcessedPosition || 0
                   }));
@@ -2240,7 +2238,7 @@ Focus on the key sections and content, making it clean and modern while preservi
                   setGenerationProgress(prev => ({
                     ...prev,
                     status: `Generated ${data.name}`,
-                    components: [...prev.components, { 
+                    components: [...prev.components, {
                       name: data.name,
                       path: data.path,
                       completed: true
@@ -2250,7 +2248,7 @@ Focus on the key sections and content, making it clean and modern while preservi
                 } else if (data.type === 'complete') {
                   generatedCode = data.generatedCode;
                   explanation = data.explanation;
-                  
+
                   // Save the last generated code
                   setConversationContext(prev => ({
                     ...prev,
@@ -2264,7 +2262,7 @@ Focus on the key sections and content, making it clean and modern while preservi
           }
         }
       }
-      
+
       setGenerationProgress(prev => ({
         ...prev,
         isGenerating: false,
@@ -2272,19 +2270,19 @@ Focus on the key sections and content, making it clean and modern while preservi
         status: 'Generation complete!',
         isEdit: prev.isEdit
       }));
-      
+
       if (generatedCode) {
         addChatMessage('AI recreation generated!', 'system');
-        
+
         // Add the explanation to chat if available
         if (explanation && explanation.trim()) {
           addChatMessage(explanation, 'ai');
         }
-        
+
         setPromptInput(generatedCode);
         // Don't show the Generated Code panel by default
         // setLeftPanelVisible(true);
-        
+
         // Wait for sandbox creation if it's still in progress
         if (sandboxPromise) {
           addChatMessage('Waiting for sandbox to be ready...', 'system');
@@ -2297,12 +2295,12 @@ Focus on the key sections and content, making it clean and modern while preservi
             throw error;
           }
         }
-        
+
         // First application for cloned site should not be in edit mode
         await applyGeneratedCode(generatedCode, false);
-        
+
         addChatMessage(
-          `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}! The scraped content is now in my context, so you can ask me to modify specific sections or add features based on the original site.`, 
+          `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}! The scraped content is now in my context, so you can ask me to modify specific sections or add features based on the original site.`,
           'ai',
           {
             scrapedUrl: url,
@@ -2310,11 +2308,11 @@ Focus on the key sections and content, making it clean and modern while preservi
             generatedCode: generatedCode
           }
         );
-        
+
         setUrlInput('');
         setUrlStatus([]);
         setHomeContextInput('');
-        
+
         // Clear generation progress and all screenshot/design states
         setGenerationProgress(prev => ({
           ...prev,
@@ -2322,14 +2320,14 @@ Focus on the key sections and content, making it clean and modern while preservi
           isStreaming: false,
           status: 'Generation complete!'
         }));
-        
+
         // Clear screenshot and preparing design states to prevent them from showing on next run
         setUrlScreenshot(null);
         setIsPreparingDesign(false);
         setTargetUrl('');
         setScreenshotError(null);
         setLoadingStage(null); // Clear loading stage
-        
+
         setTimeout(() => {
           // Switch back to preview tab but keep files
           setActiveTab('preview');
@@ -2337,7 +2335,7 @@ Focus on the key sections and content, making it clean and modern while preservi
       } else {
         throw new Error('Failed to generate recreation');
       }
-      
+
     } catch (error: any) {
       addChatMessage(`Failed to clone website: ${error.message}`, 'system');
       setUrlStatus([]);
@@ -2368,7 +2366,7 @@ Focus on the key sections and content, making it clean and modern while preservi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      
+
       const data = await response.json();
       if (data.success && data.screenshot) {
         setUrlScreenshot(data.screenshot);
@@ -2395,12 +2393,12 @@ Focus on the key sections and content, making it clean and modern while preservi
   const handleHomeScreenSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!homeUrlInput.trim()) return;
-    
+
     setHomeScreenFading(true);
-    
+
     // Clear messages
     setChatMessages([]);
-    
+
     if (creationMode === 'url') {
       // Handle URL replication (existing logic)
       await handleUrlReplication();
@@ -2413,56 +2411,56 @@ Focus on the key sections and content, making it clean and modern while preservi
   const handlePromptCreation = async () => {
     const prompt = homeUrlInput.trim();
     addChatMessage(`Creating website from prompt: "${prompt}"...`, 'system');
-    
+
     // Start creating sandbox and generating code immediately
     const sandboxPromise = !sandboxData ? createSandbox(true) : Promise.resolve();
-    
+
     // Set loading stage and switch to generation tab
     setLoadingStage('planning');
     setActiveTab('preview');
-    
+
     setTimeout(async () => {
       setShowHomeScreen(false);
       setHomeScreenFading(false);
-      
+
       try {
         // Wait for sandbox to be ready (if it's still creating)
         await sandboxPromise;
-        
+
         // Process the prompt through our API
         const promptResponse = await fetch('/api/create-from-prompt', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             prompt: prompt,
-            style: selectedStyle 
+            style: selectedStyle
           })
         });
-        
+
         if (!promptResponse.ok) {
           throw new Error('Failed to process prompt');
         }
-        
+
         const promptData = await promptResponse.json();
-        
+
         if (!promptData.success) {
           throw new Error(promptData.error || 'Failed to process prompt');
         }
-        
+
         // Update loading stage to generating and switch to generation tab
         setLoadingStage('generating');
         setTimeout(() => {
           setActiveTab('generation');
         }, 1000);
-        
+
         // Store the prompt in conversation context
         setConversationContext(prev => ({
           ...prev,
           currentProject: `${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}`
         }));
-        
+
         addChatMessage('Generating your custom website...', 'system');
-        
+
         setGenerationProgress(prev => ({
           isGenerating: true,
           status: 'Initializing AI...',
@@ -2477,7 +2475,7 @@ Focus on the key sections and content, making it clean and modern while preservi
           currentFile: undefined,
           lastProcessedPosition: 0
         }));
-        
+
         // Generate the code using the enhanced prompt
         const aiResponse = await fetch('/api/generate-ai-code-stream', {
           method: 'POST',
@@ -2492,85 +2490,85 @@ Focus on the key sections and content, making it clean and modern while preservi
             }
           })
         });
-        
+
         if (!aiResponse.ok || !aiResponse.body) {
           throw new Error('Failed to generate code');
         }
-        
+
         const reader = aiResponse.body.getReader();
         const decoder = new TextDecoder();
         let generatedCode = '';
         let explanation = '';
-        
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n');
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                
+
                 if (data.type === 'status') {
                   setGenerationProgress(prev => ({ ...prev, status: data.message }));
                 } else if (data.type === 'thinking') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: true,
                     thinkingText: (prev.thinkingText || '') + data.text
                   }));
                 } else if (data.type === 'thinking_complete') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: false,
                     thinkingDuration: data.duration
                   }));
                 } else if (data.type === 'conversation') {
                   // Add conversational text to chat only if it's not code
                   let text = data.text || '';
-                  
+
                   // Remove package tags from the text
                   text = text.replace(/<package>[^<]*<\/package>/g, '');
                   text = text.replace(/<packages>[^<]*<\/packages>/g, '');
-                  
+
                   // Filter out any XML tags and file content that slipped through
-                  if (!text.includes('<file') && !text.includes('import React') && 
-                      !text.includes('export default') && !text.includes('className=') &&
-                      text.trim().length > 0) {
+                  if (!text.includes('<file') && !text.includes('import React') &&
+                    !text.includes('export default') && !text.includes('className=') &&
+                    text.trim().length > 0) {
                     addChatMessage(text.trim(), 'ai');
                   }
                 } else if (data.type === 'stream' && data.raw) {
                   setGenerationProgress(prev => {
                     const newStreamedCode = prev.streamedCode + data.text;
-                    
-                    const updatedState = { 
-                      ...prev, 
+
+                    const updatedState = {
+                      ...prev,
                       streamedCode: newStreamedCode,
                       isStreaming: true,
                       isThinking: false,
                       status: 'Generating code...'
                     };
-                    
+
                     // Process complete files from the accumulated stream
                     const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
                     let match;
                     const processedFiles = new Set(prev.files.map(f => f.path));
-                    
+
                     while ((match = fileRegex.exec(newStreamedCode)) !== null) {
                       const filePath = match[1];
                       const fileContent = match[2];
-                      
+
                       // Only add if we haven't processed this file yet
                       if (!processedFiles.has(filePath)) {
                         const fileExt = filePath.split('.').pop() || '';
                         const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
+                          fileExt === 'css' ? 'css' :
+                            fileExt === 'json' ? 'json' :
+                              fileExt === 'html' ? 'html' : 'text';
+
                         updatedState.files = [...updatedState.files, {
                           path: filePath,
                           content: fileContent.trim(),
@@ -2578,42 +2576,42 @@ Focus on the key sections and content, making it clean and modern while preservi
                           completed: true,
                           edited: false
                         }];
-                        
+
                         updatedState.status = `Completed ${filePath}`;
                         processedFiles.add(filePath);
                       }
                     }
-                    
+
                     // Check for current file being generated (incomplete file at the end)
                     const lastFileMatch = newStreamedCode.match(/<file path="([^"]+)">([^]*?)$/);
                     if (lastFileMatch && !lastFileMatch[0].includes('</file>')) {
                       const filePath = lastFileMatch[1];
                       const partialContent = lastFileMatch[2];
-                      
+
                       if (!processedFiles.has(filePath)) {
                         const fileExt = filePath.split('.').pop() || '';
                         const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
-                        updatedState.currentFile = { 
-                          path: filePath, 
-                          content: partialContent, 
-                          type: fileType 
+                          fileExt === 'css' ? 'css' :
+                            fileExt === 'json' ? 'json' :
+                              fileExt === 'html' ? 'html' : 'text';
+
+                        updatedState.currentFile = {
+                          path: filePath,
+                          content: partialContent,
+                          type: fileType
                         };
                         updatedState.status = `Generating ${filePath}`;
                       }
                     } else {
                       updatedState.currentFile = undefined;
                     }
-                    
+
                     return updatedState;
                   });
                 } else if (data.type === 'complete') {
                   generatedCode = data.generatedCode;
                   explanation = data.explanation;
-                  
+
                   // Save the last generated code
                   setConversationContext(prev => ({
                     ...prev,
@@ -2626,42 +2624,42 @@ Focus on the key sections and content, making it clean and modern while preservi
             }
           }
         }
-        
+
         setGenerationProgress(prev => ({
           ...prev,
           isGenerating: false,
           isStreaming: false,
           status: 'Generation complete!'
         }));
-        
+
         if (generatedCode) {
           addChatMessage('Custom website generated!', 'system');
-          
+
           // Add the explanation to chat if available
           if (explanation && explanation.trim()) {
             addChatMessage(explanation, 'ai');
           }
-          
+
           setPromptInput(generatedCode);
-          
+
           // Apply the generated code
           await applyGeneratedCode(generatedCode, false);
-          
+
           addChatMessage(
-            `Successfully created your custom website${selectedStyle ? ` with ${selectedStyle} styling` : ''}! You can now ask me to modify any section or add new features.`, 
+            `Successfully created your custom website${selectedStyle ? ` with ${selectedStyle} styling` : ''}! You can now ask me to modify any section or add new features.`,
             'ai',
             {
               generatedCode: generatedCode
             }
           );
-          
+
         } else {
           throw new Error('Failed to generate website');
         }
-        
+
         setHomeUrlInput('');
         setHomeContextInput('');
-        
+
         // Clear generation progress and states
         setGenerationProgress(prev => ({
           ...prev,
@@ -2669,14 +2667,14 @@ Focus on the key sections and content, making it clean and modern while preservi
           isStreaming: false,
           status: 'Generation complete!'
         }));
-        
+
         setLoadingStage(null);
-        
+
         setTimeout(() => {
           // Switch back to preview tab but keep files
           setActiveTab('preview');
         }, 1000);
-        
+
       } catch (error: any) {
         addChatMessage(`Failed to create website: ${error.message}`, 'system');
         setLoadingStage(null);
@@ -2700,74 +2698,74 @@ Focus on the key sections and content, making it clean and modern while preservi
     // Remove protocol for cleaner display
     const cleanUrl = displayUrl.replace(/^https?:\/\//i, '');
     addChatMessage(`Starting to clone ${cleanUrl}...`, 'system');
-    
+
     // Start creating sandbox and capturing screenshot immediately in parallel
     const sandboxPromise = !sandboxData ? createSandbox(true) : Promise.resolve();
-    
+
     // Only capture screenshot if we don't already have a sandbox (first generation)
     // After sandbox is set up, skip the screenshot phase for faster generation
     if (!sandboxData) {
       captureUrlScreenshot(displayUrl);
     }
-    
+
     // Set loading stage immediately before hiding home screen
     setLoadingStage('gathering');
     // Also ensure we're on preview tab to show the loading overlay
     setActiveTab('preview');
-    
+
     setTimeout(async () => {
       setShowHomeScreen(false);
       setHomeScreenFading(false);
-      
+
       // Wait for sandbox to be ready (if it's still creating)
       await sandboxPromise;
-      
+
       // Now start the clone process which will stream the generation
       setUrlInput(homeUrlInput);
       setUrlOverlayVisible(false); // Make sure overlay is closed
       setUrlStatus(['Scraping website content...']);
-      
+
       try {
         // Scrape the website
         let url = homeUrlInput.trim();
         if (!url.match(/^https?:\/\//i)) {
           url = 'https://' + url;
         }
-        
+
         // Screenshot is already being captured in parallel above
-        
+
         const scrapeResponse = await fetch('/api/scrape-url-enhanced', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url })
         });
-        
+
         if (!scrapeResponse.ok) {
           throw new Error('Failed to scrape website');
         }
-        
+
         const scrapeData = await scrapeResponse.json();
-        
+
         if (!scrapeData.success) {
           throw new Error(scrapeData.error || 'Failed to scrape website');
         }
-        
+
         setUrlStatus(['Website scraped successfully!', 'Generating React app...']);
-        
+
         // Clear preparing design state and switch to generation tab
         setIsPreparingDesign(false);
         setUrlScreenshot(null); // Clear screenshot when starting generation
         setTargetUrl(''); // Clear target URL
-        
+
         // Update loading stage to planning
         setLoadingStage('planning');
-        
+
         // Brief pause before switching to generation tab
         setTimeout(() => {
           setLoadingStage('generating');
           setActiveTab('generation');
         }, 1500);
-        
+
         // Store scraped data in conversation context
         setConversationContext(prev => ({
           ...prev,
@@ -2778,7 +2776,7 @@ Focus on the key sections and content, making it clean and modern while preservi
           }],
           currentProject: `${url} Clone`
         }));
-        
+
         const prompt = `I want to recreate the ${url} website as a complete React application based on the scraped content below.
 
 ${JSON.stringify(scrapeData, null, 2)}
@@ -2800,7 +2798,7 @@ IMPORTANT INSTRUCTIONS:
 ${homeContextInput ? '- Apply the user\'s context/theme requirements throughout the application' : ''}
 
 Focus on the key sections and content, making it clean and modern.`;
-        
+
         setGenerationProgress(prev => ({
           isGenerating: true,
           status: 'Initializing AI...',
@@ -2816,11 +2814,11 @@ Focus on the key sections and content, making it clean and modern.`;
           currentFile: undefined,
           lastProcessedPosition: 0
         }));
-        
+
         const aiResponse = await fetch('/api/generate-ai-code-stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             prompt,
             model: aiModel,
             context: {
@@ -2830,85 +2828,85 @@ Focus on the key sections and content, making it clean and modern.`;
             }
           })
         });
-        
+
         if (!aiResponse.ok || !aiResponse.body) {
           throw new Error('Failed to generate code');
         }
-        
+
         const reader = aiResponse.body.getReader();
         const decoder = new TextDecoder();
         let generatedCode = '';
         let explanation = '';
-        
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n');
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                
+
                 if (data.type === 'status') {
                   setGenerationProgress(prev => ({ ...prev, status: data.message }));
                 } else if (data.type === 'thinking') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: true,
                     thinkingText: (prev.thinkingText || '') + data.text
                   }));
                 } else if (data.type === 'thinking_complete') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
+                  setGenerationProgress(prev => ({
+                    ...prev,
                     isThinking: false,
                     thinkingDuration: data.duration
                   }));
                 } else if (data.type === 'conversation') {
                   // Add conversational text to chat only if it's not code
                   let text = data.text || '';
-                  
+
                   // Remove package tags from the text
                   text = text.replace(/<package>[^<]*<\/package>/g, '');
                   text = text.replace(/<packages>[^<]*<\/packages>/g, '');
-                  
+
                   // Filter out any XML tags and file content that slipped through
-                  if (!text.includes('<file') && !text.includes('import React') && 
-                      !text.includes('export default') && !text.includes('className=') &&
-                      text.trim().length > 0) {
+                  if (!text.includes('<file') && !text.includes('import React') &&
+                    !text.includes('export default') && !text.includes('className=') &&
+                    text.trim().length > 0) {
                     addChatMessage(text.trim(), 'ai');
                   }
                 } else if (data.type === 'stream' && data.raw) {
                   setGenerationProgress(prev => {
                     const newStreamedCode = prev.streamedCode + data.text;
-                    
-                    const updatedState = { 
-                      ...prev, 
+
+                    const updatedState = {
+                      ...prev,
                       streamedCode: newStreamedCode,
                       isStreaming: true,
                       isThinking: false,
                       status: 'Generating code...'
                     };
-                    
+
                     // Process complete files from the accumulated stream
                     const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
                     let match;
                     const processedFiles = new Set(prev.files.map(f => f.path));
-                    
+
                     while ((match = fileRegex.exec(newStreamedCode)) !== null) {
                       const filePath = match[1];
                       const fileContent = match[2];
-                      
+
                       // Only add if we haven't processed this file yet
                       if (!processedFiles.has(filePath)) {
                         const fileExt = filePath.split('.').pop() || '';
                         const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
+                          fileExt === 'css' ? 'css' :
+                            fileExt === 'json' ? 'json' :
+                              fileExt === 'html' ? 'html' : 'text';
+
                         updatedState.files = [...updatedState.files, {
                           path: filePath,
                           content: fileContent.trim(),
@@ -2916,42 +2914,42 @@ Focus on the key sections and content, making it clean and modern.`;
                           completed: true,
                           edited: false
                         }];
-                        
+
                         updatedState.status = `Completed ${filePath}`;
                         processedFiles.add(filePath);
                       }
                     }
-                    
+
                     // Check for current file being generated (incomplete file at the end)
                     const lastFileMatch = newStreamedCode.match(/<file path="([^"]+)">([^]*?)$/);
                     if (lastFileMatch && !lastFileMatch[0].includes('</file>')) {
                       const filePath = lastFileMatch[1];
                       const partialContent = lastFileMatch[2];
-                      
+
                       if (!processedFiles.has(filePath)) {
                         const fileExt = filePath.split('.').pop() || '';
                         const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
-                        updatedState.currentFile = { 
-                          path: filePath, 
-                          content: partialContent, 
-                          type: fileType 
+                          fileExt === 'css' ? 'css' :
+                            fileExt === 'json' ? 'json' :
+                              fileExt === 'html' ? 'html' : 'text';
+
+                        updatedState.currentFile = {
+                          path: filePath,
+                          content: partialContent,
+                          type: fileType
                         };
                         updatedState.status = `Generating ${filePath}`;
                       }
                     } else {
                       updatedState.currentFile = undefined;
                     }
-                    
+
                     return updatedState;
                   });
                 } else if (data.type === 'complete') {
                   generatedCode = data.generatedCode;
                   explanation = data.explanation;
-                  
+
                   // Save the last generated code
                   setConversationContext(prev => ({
                     ...prev,
@@ -2964,29 +2962,29 @@ Focus on the key sections and content, making it clean and modern.`;
             }
           }
         }
-        
+
         setGenerationProgress(prev => ({
           ...prev,
           isGenerating: false,
           isStreaming: false,
           status: 'Generation complete!'
         }));
-        
+
         if (generatedCode) {
           addChatMessage('AI recreation generated!', 'system');
-          
+
           // Add the explanation to chat if available
           if (explanation && explanation.trim()) {
             addChatMessage(explanation, 'ai');
           }
-          
+
           setPromptInput(generatedCode);
-          
+
           // First application for cloned site should not be in edit mode
           await applyGeneratedCode(generatedCode, false);
-          
+
           addChatMessage(
-            `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}! The scraped content is now in my context, so you can ask me to modify specific sections or add features based on the original site.`, 
+            `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}! The scraped content is now in my context, so you can ask me to modify specific sections or add features based on the original site.`,
             'ai',
             {
               scrapedUrl: url,
@@ -2994,7 +2992,7 @@ Focus on the key sections and content, making it clean and modern.`;
               generatedCode: generatedCode
             }
           );
-          
+
           setConversationContext(prev => ({
             ...prev,
             generatedComponents: [],
@@ -3006,11 +3004,11 @@ Focus on the key sections and content, making it clean and modern.`;
         } else {
           throw new Error('Failed to generate recreation');
         }
-        
+
         setUrlInput('');
         setUrlStatus([]);
         setHomeContextInput('');
-        
+
         // Clear generation progress and all screenshot/design states
         setGenerationProgress(prev => ({
           ...prev,
@@ -3018,14 +3016,14 @@ Focus on the key sections and content, making it clean and modern.`;
           isStreaming: false,
           status: 'Generation complete!'
         }));
-        
+
         // Clear screenshot and preparing design states to prevent them from showing on next run
         setUrlScreenshot(null);
         setIsPreparingDesign(false);
         setTargetUrl('');
         setScreenshotError(null);
         setLoadingStage(null); // Clear loading stage
-        
+
         setTimeout(() => {
           // Switch back to preview tab but keep files
           setActiveTab('preview');
@@ -3052,7 +3050,7 @@ Focus on the key sections and content, making it clean and modern.`;
     <div className="font-sans bg-background text-foreground h-screen flex flex-col">
       {/* Theme Toggle */}
       <ThemeToggle />
-      
+
       {/* Home Screen Overlay */}
       {showHomeScreen && (
         <div className={`fixed inset-0 z-50 transition-opacity duration-500 ${homeScreenFading ? 'opacity-0' : 'opacity-100'}`}>
@@ -3060,13 +3058,13 @@ Focus on the key sections and content, making it clean and modern.`;
           <div className="absolute inset-0 bg-white dark:bg-gray-900 overflow-hidden">
             {/* Main Sun - Pulsing */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-orange-400/50 via-orange-300/30 to-transparent rounded-full blur-[80px] animate-[sunPulse_4s_ease-in-out_infinite]" />
-            
+
             {/* Inner Sun Core - Brighter */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-gradient-radial from-yellow-300/40 via-orange-400/30 to-transparent rounded-full blur-[40px] animate-[sunPulse_4s_ease-in-out_infinite_0.5s]" />
-            
+
             {/* Outer Glow - Subtle */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1200px] h-[1200px] bg-gradient-radial from-orange-200/20 to-transparent rounded-full blur-[120px]" />
-            
+
             {/* Giant Glowing Orb - Center Bottom */}
             <div className="absolute bottom-0 left-1/2 w-[800px] h-[800px] animate-[orbShrink_3s_ease-out_forwards]" style={{ transform: 'translateX(-50%) translateY(45%)' }}>
               <div className="relative w-full h-full">
@@ -3077,8 +3075,8 @@ Focus on the key sections and content, making it clean and modern.`;
               </div>
             </div>
           </div>
-          
-          
+
+
           {/* Close button on hover */}
           <button
             onClick={() => {
@@ -3097,7 +3095,7 @@ Focus on the key sections and content, making it clean and modern.`;
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          
+
           {/* Header */}
           <div className="absolute top-0 left-0 right-0 z-20 px-6 py-4 flex items-center justify-between animate-[fadeIn_0.8s_ease-out]">
             <ThemeLogo />
@@ -3113,7 +3111,7 @@ Focus on the key sections and content, making it clean and modern.`;
               <span>Settings</span>
             </button>
           </div>
-          
+
           {/* Main content */}
           <div className="relative z-10 h-full flex items-center justify-center px-4">
             <div className="text-center max-w-4xl min-w-[600px] mx-auto">
@@ -3123,7 +3121,7 @@ Focus on the key sections and content, making it clean and modern.`;
                   <span className="hidden md:inline">openWebDev</span>
                   <span className="md:hidden">openWebDev</span>
                 </h1>
-                <motion.p 
+                <motion.p
                   className="text-base lg:text-lg max-w-lg mx-auto mt-2.5 text-zinc-500 dark:text-zinc-400 text-center text-balance"
                   animate={{
                     opacity: showStyleSelector ? 0.7 : 1
@@ -3133,7 +3131,7 @@ Focus on the key sections and content, making it clean and modern.`;
                   Create websites from scratch or replicate existing ones, in seconds.
                 </motion.p>
               </div>
-              
+
               {/* Creation Mode Tabs */}
               <div className="mt-6 flex justify-center animate-[fadeIn_0.8s_ease-out]">
                 <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-600 rounded-xl p-1 shadow-sm">
@@ -3147,11 +3145,10 @@ Focus on the key sections and content, making it clean and modern.`;
                         setShowStyleSelector(false);
                         setSelectedStyle(null);
                       }}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                        creationMode === 'url'
-                          ? 'bg-[#36322F] text-white shadow-sm'
-                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                      }`}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${creationMode === 'url'
+                        ? 'bg-[#36322F] text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3169,11 +3166,10 @@ Focus on the key sections and content, making it clean and modern.`;
                         setShowStyleSelector(false);
                         setSelectedStyle(null);
                       }}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                        creationMode === 'prompt'
-                          ? 'bg-[#36322F] text-white shadow-sm'
-                          : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                      }`}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${creationMode === 'prompt'
+                        ? 'bg-[#36322F] text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                        }`}
                     >
                       <div className="flex items-center gap-2">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3185,7 +3181,7 @@ Focus on the key sections and content, making it clean and modern.`;
                   </div>
                 </div>
               </div>
-              
+
               <form onSubmit={handleHomeScreenSubmit} className="mt-5 max-w-3xl mx-auto">
                 <div className="w-full relative group">
                   {creationMode === 'url' ? (
@@ -3196,7 +3192,7 @@ Focus on the key sections and content, making it clean and modern.`;
                         onChange={(e) => {
                           const value = e.target.value;
                           setHomeUrlInput(value);
-                          
+
                           // Check if it's a valid domain
                           const domainRegex = /^(https?:\/\/)?(([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(\/?.*)?$/;
                           if (domainRegex.test(value) && value.length > 5) {
@@ -3216,11 +3212,10 @@ Focus on the key sections and content, making it clean and modern.`;
                         }}
                         autoFocus
                       />
-                      <div 
-                        aria-hidden="true" 
-                        className={`absolute top-1/2 -translate-y-1/2 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${
-                          homeUrlInput ? 'opacity-0' : 'opacity-100'
-                        }`}
+                      <div
+                        aria-hidden="true"
+                        className={`absolute top-1/2 -translate-y-1/2 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${homeUrlInput ? 'opacity-0' : 'opacity-100'
+                          }`}
                       >
                         <span className="text-[#605A57]/50 dark:text-gray-400/70" style={{ fontFamily: 'monospace' }}>
                           https://firecrawl.dev
@@ -3234,7 +3229,7 @@ Focus on the key sections and content, making it clean and modern.`;
                         onChange={(e) => {
                           const value = e.target.value;
                           setHomeUrlInput(value);
-                          
+
                           // Show style selector when prompt has content
                           if (value.trim().length > 10) {
                             setTimeout(() => setShowStyleSelector(true), 100);
@@ -3252,11 +3247,10 @@ Focus on the key sections and content, making it clean and modern.`;
                         rows={2}
                         autoFocus
                       />
-                      <div 
-                        aria-hidden="true" 
-                        className={`absolute top-3 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${
-                          homeUrlInput ? 'opacity-0' : 'opacity-100'
-                        }`}
+                      <div
+                        aria-hidden="true"
+                        className={`absolute top-3 left-4 pointer-events-none text-sm text-opacity-50 text-start transition-opacity ${homeUrlInput ? 'opacity-0' : 'opacity-100'
+                          }`}
                       >
                         <span className="text-[#605A57]/50 dark:text-gray-400/70">
                           Create a modern e-commerce website for selling handmade jewelry...
@@ -3268,7 +3262,7 @@ Focus on the key sections and content, making it clean and modern.`;
                     type="submit"
                     disabled={!homeUrlInput.trim()}
                     className="absolute top-1/2 transform -translate-y-1/2 right-2 flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title={creationMode === 'url' 
+                    title={creationMode === 'url'
                       ? (selectedStyle ? `Clone with ${selectedStyle} Style` : 'Clone Website')
                       : (selectedStyle ? `Create with ${selectedStyle} Style` : 'Create Website')
                     }
@@ -3285,167 +3279,152 @@ Focus on the key sections and content, making it clean and modern.`;
                     )}
                   </button>
                 </div>
-                  
-                  {/* Style Selector - Slides out when valid domain is entered */}
-                  {showStyleSelector && (
-                    <div className="overflow-hidden mt-4">
-                      <div className={`transition-all duration-500 ease-out transform ${
-                        showStyleSelector ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
+
+                {/* Style Selector - Slides out when valid domain is entered */}
+                {showStyleSelector && (
+                  <div className="overflow-hidden mt-4">
+                    <div className={`transition-all duration-500 ease-out transform ${showStyleSelector ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
                       }`}>
-                    <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-600 rounded-xl p-4 shadow-sm">
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 font-medium">
-                        {creationMode === 'url' ? 'How do you want your site to look?' : 'What style should your website have?'}
-                      </p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {[
-                          { name: 'Neobrutalist', description: 'Bold colors, thick borders' },
-                          { name: 'Glassmorphism', description: 'Frosted glass effects' },
-                          { name: 'Minimalist', description: 'Clean and simple' },
-                          { name: 'Dark Mode', description: 'Dark theme' },
-                          { name: 'Gradient', description: 'Colorful gradients' },
-                          { name: 'Retro', description: '80s/90s aesthetic' },
-                          { name: 'Modern', description: 'Contemporary design' },
-                          { name: 'Monochrome', description: 'Black and white' }
-                        ].map((style) => (
-                          <button
-                            key={style.name}
-                            type="button"
+                      <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-600 rounded-xl p-4 shadow-sm">
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 font-medium">
+                          {creationMode === 'url' ? 'How do you want your site to look?' : 'What style should your website have?'}
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {[
+                            { name: 'Neobrutalist', description: 'Bold colors, thick borders' },
+                            { name: 'Glassmorphism', description: 'Frosted glass effects' },
+                            { name: 'Minimalist', description: 'Clean and simple' },
+                            { name: 'Dark Mode', description: 'Dark theme' },
+                            { name: 'Gradient', description: 'Colorful gradients' },
+                            { name: 'Retro', description: '80s/90s aesthetic' },
+                            { name: 'Modern', description: 'Contemporary design' },
+                            { name: 'Monochrome', description: 'Black and white' }
+                          ].map((style) => (
+                            <button
+                              key={style.name}
+                              type="button"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  // Submit the form
+                                  const form = e.currentTarget.closest('form');
+                                  if (form) {
+                                    form.requestSubmit();
+                                  }
+                                }
+                              }}
+                              onClick={() => {
+                                if (selectedStyle === style.name) {
+                                  // Deselect if clicking the same style
+                                  setSelectedStyle(null);
+                                  // Keep only additional context, remove the style theme part
+                                  const currentAdditional = homeContextInput.replace(/^[^,]+theme\s*,?\s*/, '').trim();
+                                  setHomeContextInput(currentAdditional);
+                                } else {
+                                  // Select new style
+                                  setSelectedStyle(style.name);
+                                  // Extract any additional context (everything after the style theme)
+                                  const currentAdditional = homeContextInput.replace(/^[^,]+theme\s*,?\s*/, '').trim();
+                                  setHomeContextInput(style.name.toLowerCase() + ' theme' + (currentAdditional ? ', ' + currentAdditional : ''));
+                                }
+                              }}
+                              className={`p-3 rounded-lg border transition-all ${selectedStyle === style.name
+                                ? 'border-orange-400 bg-orange-50 dark:bg-orange-900/50 dark:border-orange-500 text-gray-900 dark:text-white shadow-sm'
+                                : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-orange-200 dark:hover:border-orange-400 hover:bg-orange-50/50 dark:hover:bg-orange-900/30 text-gray-700 dark:text-gray-200'
+                                }`}
+                            >
+                              <div className="text-sm font-medium">{style.name}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{style.description}</div>
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Additional context input - part of the style selector */}
+                        <div className="mt-4 mb-2">
+                          <input
+                            type="text"
+                            value={(() => {
+                              if (!selectedStyle) return homeContextInput;
+                              // Extract additional context by removing the style theme part
+                              const additional = homeContextInput.replace(new RegExp('^' + selectedStyle.toLowerCase() + ' theme\\s*,?\\s*', 'i'), '');
+                              return additional;
+                            })()}
+                            onChange={(e) => {
+                              const additionalContext = e.target.value;
+                              if (selectedStyle) {
+                                setHomeContextInput(selectedStyle.toLowerCase() + ' theme' + (additionalContext.trim() ? ', ' + additionalContext : ''));
+                              } else {
+                                setHomeContextInput(additionalContext);
+                              }
+                            }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
-                                e.stopPropagation();
-                                // Submit the form
                                 const form = e.currentTarget.closest('form');
                                 if (form) {
                                   form.requestSubmit();
                                 }
                               }
                             }}
-                            onClick={() => {
-                              if (selectedStyle === style.name) {
-                                // Deselect if clicking the same style
-                                setSelectedStyle(null);
-                                // Keep only additional context, remove the style theme part
-                                const currentAdditional = homeContextInput.replace(/^[^,]+theme\s*,?\s*/, '').trim();
-                                setHomeContextInput(currentAdditional);
-                              } else {
-                                // Select new style
-                                setSelectedStyle(style.name);
-                                // Extract any additional context (everything after the style theme)
-                                const currentAdditional = homeContextInput.replace(/^[^,]+theme\s*,?\s*/, '').trim();
-                                setHomeContextInput(style.name.toLowerCase() + ' theme' + (currentAdditional ? ', ' + currentAdditional : ''));
-                              }
-                            }}
-                            className={`p-3 rounded-lg border transition-all ${
-                              selectedStyle === style.name
-                                ? 'border-orange-400 bg-orange-50 dark:bg-orange-900/50 dark:border-orange-500 text-gray-900 dark:text-white shadow-sm'
-                                : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-orange-200 dark:hover:border-orange-400 hover:bg-orange-50/50 dark:hover:bg-orange-900/30 text-gray-700 dark:text-gray-200'
-                            }`}
-                          >
-                            <div className="text-sm font-medium">{style.name}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{style.description}</div>
-                          </button>
-                        ))}
-                      </div>
-                      
-                      {/* Additional context input - part of the style selector */}
-                      <div className="mt-4 mb-2">
-                        <input
-                          type="text"
-                          value={(() => {
-                            if (!selectedStyle) return homeContextInput;
-                            // Extract additional context by removing the style theme part
-                            const additional = homeContextInput.replace(new RegExp('^' + selectedStyle.toLowerCase() + ' theme\\s*,?\\s*', 'i'), '');
-                            return additional;
-                          })()}
-                          onChange={(e) => {
-                            const additionalContext = e.target.value;
-                            if (selectedStyle) {
-                              setHomeContextInput(selectedStyle.toLowerCase() + ' theme' + (additionalContext.trim() ? ', ' + additionalContext : ''));
-                            } else {
-                              setHomeContextInput(additionalContext);
+                            placeholder={creationMode === 'url'
+                              ? "Add more details: specific features, color preferences..."
+                              : "Additional requirements: mobile-responsive, dark mode, specific sections..."
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              const form = e.currentTarget.closest('form');
-                              if (form) {
-                                form.requestSubmit();
-                              }
-                            }
-                          }}
-                          placeholder={creationMode === 'url' 
-                            ? "Add more details: specific features, color preferences..." 
-                            : "Additional requirements: mobile-responsive, dark mode, specific sections..."
-                          }
-                          className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-orange-300 dark:focus:border-orange-500 focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-900/50 transition-all duration-200"
-                        />
+                            className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-orange-300 dark:focus:border-orange-500 focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-900/50 transition-all duration-200"
+                          />
+                        </div>
                       </div>
                     </div>
-                      </div>
-                    </div>
-                  )}
+                  </div>
+                )}
               </form>
-              
+
               {/* Model Selector */}
               <div className="mt-6 flex items-center justify-center animate-[fadeIn_1s_ease-out]">
-                <select
-                  value={aiModel}
-                  onChange={(e) => {
-                    const newModel = e.target.value;
-                    setAiModel(newModel);
-                    const params = new URLSearchParams(searchParams);
-                    params.set('model', newModel);
-                    if (sandboxData?.sandboxId) {
-                      params.set('sandbox', sandboxData.sandboxId);
-                    }
-                    router.push(`/?${params.toString()}`);
-                  }}
-                  className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-[10px] focus:outline-none focus:ring-2 focus:ring-[#36322F] focus:border-transparent"
-                  style={{
-                    boxShadow: '0 0 0 1px #e3e1de66, 0 1px 2px #5f4a2e14'
-                  }}
-                >
-                  {appConfig.ai.availableModels.map(model => (
-                    <option key={model} value={model}>
-                      {(appConfig.ai.modelDisplayNames as any)[model] || model}
-                    </option>
-                  ))}
-                </select>
+                <div className="w-80">
+                  <ModelSelector
+                    value={aiModel}
+                    onChange={(newModel) => {
+                      setAiModel(newModel);
+                      const params = new URLSearchParams(searchParams);
+                      params.set('model', newModel);
+                      if (sandboxData?.sandboxId) {
+                        params.set('sandbox', sandboxData.sandboxId);
+                      }
+                      router.push(`/?${params.toString()}`);
+                    }}
+                    className="text-sm"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
-      
+
       <div className="bg-card px-4 py-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-4">
           <ThemeLogo />
         </div>
         <div className="flex items-center gap-2">
           {/* Model Selector - Left side */}
-          <select
-            value={aiModel}
-            onChange={(e) => {
-              const newModel = e.target.value;
-              setAiModel(newModel);
-              const params = new URLSearchParams(searchParams);
-              params.set('model', newModel);
-              if (sandboxData?.sandboxId) {
-                params.set('sandbox', sandboxData.sandboxId);
-              }
-              router.push(`/?${params.toString()}`);
-            }}
-            className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-[10px] focus:outline-none focus:ring-2 focus:ring-[#36322F] focus:border-transparent"
-          >
-            {appConfig.ai.availableModels.map(model => (
-              <option key={model} value={model}>
-                {(appConfig.ai.modelDisplayNames as any)[model] || model}
-              </option>
-            ))}
-          </select>
-          <Button 
+          <div className="w-64">
+            <ModelSelector
+              value={aiModel}
+              onChange={(newModel) => {
+                setAiModel(newModel);
+                const params = new URLSearchParams(searchParams);
+                params.set('model', newModel);
+                if (sandboxData?.sandboxId) {
+                  params.set('sandbox', sandboxData.sandboxId);
+                }
+                router.push(`/?${params.toString()}`);
+              }}
+              className="text-sm"
+            />
+          </div>
+          <Button
             variant="code"
             onClick={() => createSandbox()}
             size="sm"
@@ -3465,7 +3444,7 @@ Focus on the key sections and content, making it clean and modern.`;
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a1 1 0 001 1h16a1 1 0 001-1V7M3 7l9 6 9-6" />
             </svg>
           </Button>
-          <Button 
+          <Button
             variant="code"
             onClick={reapplyLastGeneration}
             size="sm"
@@ -3476,7 +3455,7 @@ Focus on the key sections and content, making it clean and modern.`;
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </Button>
-          <Button 
+          <Button
             variant="code"
             onClick={downloadZip}
             disabled={!sandboxData}
@@ -3506,20 +3485,20 @@ Focus on the key sections and content, making it clean and modern.`;
                   const sourceURL = metadata.sourceURL || site.url;
                   const favicon = metadata.favicon || `https://www.google.com/s2/favicons?domain=${new URL(sourceURL).hostname}&sz=32`;
                   const siteName = metadata.ogSiteName || metadata.title || new URL(sourceURL).hostname;
-                  
+
                   return (
                     <div key={idx} className="flex items-center gap-2 text-sm">
-                      <img 
-                        src={favicon} 
+                      <img
+                        src={favicon}
                         alt={siteName}
                         className="w-4 h-4 rounded"
                         onError={(e) => {
                           e.currentTarget.src = `https://www.google.com/s2/favicons?domain=${new URL(sourceURL).hostname}&sz=32`;
                         }}
                       />
-                      <a 
-                        href={sourceURL} 
-                        target="_blank" 
+                      <a
+                        href={sourceURL}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="text-black hover:text-gray-700 truncate max-w-[250px]"
                         title={sourceURL}
@@ -3536,125 +3515,121 @@ Focus on the key sections and content, making it clean and modern.`;
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-1 scrollbar-hide" ref={chatMessagesRef}>
             {chatMessages.map((msg, idx) => {
               // Check if this message is from a successful generation
-              const isGenerationComplete = msg.content.includes('Successfully recreated') || 
-                                         msg.content.includes('AI recreation generated!') ||
-                                         msg.content.includes('Code generated!');
-              
+              const isGenerationComplete = msg.content.includes('Successfully recreated') ||
+                msg.content.includes('AI recreation generated!') ||
+                msg.content.includes('Code generated!');
+
               // Get the files from metadata if this is a completion message
               const completedFiles = msg.metadata?.appliedFiles || [];
-              
+
               return (
                 <div key={idx} className="block">
                   <div className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'} mb-1`}>
                     <div className="block">
-                      <div className={`block rounded-[10px] px-4 py-2 ${
-                        msg.type === 'user' ? 'bg-[#36322F] text-white ml-auto max-w-[80%]' :
+                      <div className={`block rounded-[10px] px-4 py-2 ${msg.type === 'user' ? 'bg-[#36322F] text-white ml-auto max-w-[80%]' :
                         msg.type === 'ai' ? 'bg-gray-100 text-gray-900 mr-auto max-w-[80%]' :
-                        msg.type === 'system' ? 'bg-[#36322F] text-white text-sm' :
-                        msg.type === 'command' ? 'bg-[#36322F] text-white font-mono text-sm' :
-                        msg.type === 'error' ? 'bg-red-900 text-red-100 text-sm border border-red-700' :
-                        'bg-[#36322F] text-white text-sm'
-                      }`}>
-                    {msg.type === 'command' ? (
-                      <div className="flex items-start gap-2">
-                        <span className={`text-xs ${
-                          msg.metadata?.commandType === 'input' ? 'text-blue-400' :
-                          msg.metadata?.commandType === 'error' ? 'text-red-400' :
-                          msg.metadata?.commandType === 'success' ? 'text-green-400' :
-                          'text-gray-400'
+                          msg.type === 'system' ? 'bg-[#36322F] text-white text-sm' :
+                            msg.type === 'command' ? 'bg-[#36322F] text-white font-mono text-sm' :
+                              msg.type === 'error' ? 'bg-red-900 text-red-100 text-sm border border-red-700' :
+                                'bg-[#36322F] text-white text-sm'
                         }`}>
-                          {msg.metadata?.commandType === 'input' ? '$' : '>'}
-                        </span>
-                        <span className="flex-1 whitespace-pre-wrap text-white">{msg.content}</span>
-                      </div>
-                    ) : msg.type === 'error' ? (
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-red-800 rounded-full flex items-center justify-center">
-                            <svg className="w-5 h-5 text-red-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
+                        {msg.type === 'command' ? (
+                          <div className="flex items-start gap-2">
+                            <span className={`text-xs ${msg.metadata?.commandType === 'input' ? 'text-blue-400' :
+                              msg.metadata?.commandType === 'error' ? 'text-red-400' :
+                                msg.metadata?.commandType === 'success' ? 'text-green-400' :
+                                  'text-gray-400'
+                              }`}>
+                              {msg.metadata?.commandType === 'input' ? '$' : '>'}
+                            </span>
+                            <span className="flex-1 whitespace-pre-wrap text-white">{msg.content}</span>
                           </div>
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold mb-1">Build Errors Detected</div>
-                          <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
-                          <div className="mt-2 text-xs opacity-70">Press 'F' or click the Fix button above to resolve</div>
-                        </div>
+                        ) : msg.type === 'error' ? (
+                          <div className="flex items-start gap-3">
+                            <div className="flex-shrink-0">
+                              <div className="w-8 h-8 bg-red-800 rounded-full flex items-center justify-center">
+                                <svg className="w-5 h-5 text-red-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-semibold mb-1">Build Errors Detected</div>
+                              <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+                              <div className="mt-2 text-xs opacity-70">Press 'F' or click the Fix button above to resolve</div>
+                            </div>
+                          </div>
+                        ) : (
+                          msg.content
+                        )}
                       </div>
-                    ) : (
-                      msg.content
-                    )}
-                      </div>
-                  
+
                       {/* Show applied files if this is an apply success message */}
                       {msg.metadata?.appliedFiles && msg.metadata.appliedFiles.length > 0 && (
-                    <div className="mt-2 inline-block bg-gray-100 rounded-[10px] p-3">
-                      <div className="text-xs font-medium mb-1 text-gray-700">
-                        {msg.content.includes('Applied') ? 'Files Updated:' : 'Generated Files:'}
-                      </div>
-                      <div className="flex flex-wrap items-start gap-1">
-                        {msg.metadata.appliedFiles.map((filePath, fileIdx) => {
-                          const fileName = filePath.split('/').pop() || filePath;
-                          const fileExt = fileName.split('.').pop() || '';
-                          const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                          fileExt === 'css' ? 'css' :
-                                          fileExt === 'json' ? 'json' : 'text';
-                          
-                          return (
-                            <div
-                              key={`applied-${fileIdx}`}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-[#36322F] text-white rounded-[10px] text-xs animate-fade-in-up"
-                              style={{ animationDelay: `${fileIdx * 30}ms` }}
-                            >
-                              <span className={`inline-block w-1.5 h-1.5 rounded-full ${
-                                fileType === 'css' ? 'bg-blue-400' :
-                                fileType === 'javascript' ? 'bg-yellow-400' :
-                                fileType === 'json' ? 'bg-green-400' :
-                                'bg-gray-400'
-                              }`} />
-                              {fileName}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  
+                        <div className="mt-2 inline-block bg-gray-100 rounded-[10px] p-3">
+                          <div className="text-xs font-medium mb-1 text-gray-700">
+                            {msg.content.includes('Applied') ? 'Files Updated:' : 'Generated Files:'}
+                          </div>
+                          <div className="flex flex-wrap items-start gap-1">
+                            {msg.metadata.appliedFiles.map((filePath, fileIdx) => {
+                              const fileName = filePath.split('/').pop() || filePath;
+                              const fileExt = fileName.split('.').pop() || '';
+                              const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
+                                fileExt === 'css' ? 'css' :
+                                  fileExt === 'json' ? 'json' : 'text';
+
+                              return (
+                                <div
+                                  key={`applied-${fileIdx}`}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-[#36322F] text-white rounded-[10px] text-xs animate-fade-in-up"
+                                  style={{ animationDelay: `${fileIdx * 30}ms` }}
+                                >
+                                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${fileType === 'css' ? 'bg-blue-400' :
+                                    fileType === 'javascript' ? 'bg-yellow-400' :
+                                      fileType === 'json' ? 'bg-green-400' :
+                                        'bg-gray-400'
+                                    }`} />
+                                  {fileName}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Show generated files for completion messages - but only if no appliedFiles already shown */}
                       {isGenerationComplete && generationProgress.files.length > 0 && idx === chatMessages.length - 1 && !msg.metadata?.appliedFiles && !chatMessages.some(m => m.metadata?.appliedFiles) && (
-                    <div className="mt-2 inline-block bg-gray-100 rounded-[10px] p-3">
-                      <div className="text-xs font-medium mb-1 text-gray-700">Generated Files:</div>
-                      <div className="flex flex-wrap items-start gap-1">
-                        {generationProgress.files.map((file, fileIdx) => (
-                          <div
-                            key={`complete-${fileIdx}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-[#36322F] text-white rounded-[10px] text-xs animate-fade-in-up"
-                            style={{ animationDelay: `${fileIdx * 30}ms` }}
-                          >
-                            <span className={`inline-block w-1.5 h-1.5 rounded-full ${
-                              file.type === 'css' ? 'bg-blue-400' :
-                              file.type === 'javascript' ? 'bg-yellow-400' :
-                              file.type === 'json' ? 'bg-green-400' :
-                              'bg-gray-400'
-                            }`} />
-                            {file.path.split('/').pop()}
+                        <div className="mt-2 inline-block bg-gray-100 rounded-[10px] p-3">
+                          <div className="text-xs font-medium mb-1 text-gray-700">Generated Files:</div>
+                          <div className="flex flex-wrap items-start gap-1">
+                            {generationProgress.files.map((file, fileIdx) => (
+                              <div
+                                key={`complete-${fileIdx}`}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-[#36322F] text-white rounded-[10px] text-xs animate-fade-in-up"
+                                style={{ animationDelay: `${fileIdx * 30}ms` }}
+                              >
+                                <span className={`inline-block w-1.5 h-1.5 rounded-full ${file.type === 'css' ? 'bg-blue-400' :
+                                  file.type === 'javascript' ? 'bg-yellow-400' :
+                                    file.type === 'json' ? 'bg-green-400' :
+                                      'bg-gray-400'
+                                  }`} />
+                                {file.path.split('/').pop()}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                    </div>
+                        </div>
+                      )}
                     </div>
                   </div>
+                </div>
               );
             })}
-            
+
             {/* Code application progress */}
             {codeApplicationState.stage && (
               <CodeApplicationProgress state={codeApplicationState} />
             )}
-            
+
             {/* File generation progress - inline display (during generation) */}
             {generationProgress.isGenerating && (
               <div className="inline-block bg-gray-100 rounded-lg p-3">
@@ -3675,7 +3650,7 @@ Focus on the key sections and content, making it clean and modern.`;
                       {file.path.split('/').pop()}
                     </div>
                   ))}
-                  
+
                   {/* Show current file being generated */}
                   {generationProgress.currentFile && (
                     <div className="flex items-center gap-1 px-2 py-1 bg-[#36322F]/70 text-white rounded-[10px] text-xs animate-pulse"
@@ -3685,10 +3660,10 @@ Focus on the key sections and content, making it clean and modern.`;
                     </div>
                   )}
                 </div>
-                
+
                 {/* Live streaming response display */}
                 {generationProgress.streamedCode && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
@@ -3766,11 +3741,10 @@ Focus on the key sections and content, making it clean and modern.`;
               <div className="flex bg-[#36322F] rounded-lg p-1">
                 <button
                   onClick={() => setActiveTab('generation')}
-                  className={`p-2 rounded-md transition-all ${
-                    activeTab === 'generation' 
-                      ? 'bg-black text-white' 
-                      : 'text-gray-300 hover:text-white hover:bg-gray-700'
-                  }`}
+                  className={`p-2 rounded-md transition-all ${activeTab === 'generation'
+                    ? 'bg-black text-white'
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    }`}
                   title="Code"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3779,11 +3753,10 @@ Focus on the key sections and content, making it clean and modern.`;
                 </button>
                 <button
                   onClick={() => setActiveTab('preview')}
-                  className={`p-2 rounded-md transition-all ${
-                    activeTab === 'preview' 
-                      ? 'bg-black text-white' 
-                      : 'text-gray-300 hover:text-white hover:bg-gray-700'
-                  }`}
+                  className={`p-2 rounded-md transition-all ${activeTab === 'preview'
+                    ? 'bg-black text-white'
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    }`}
                   title="Preview"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3824,9 +3797,9 @@ Focus on the key sections and content, making it clean and modern.`;
                     size="sm"
                     asChild
                   >
-                    <a 
-                      href={sandboxData.url} 
-                      target="_blank" 
+                    <a
+                      href={sandboxData.url}
+                      target="_blank"
                       rel="noopener noreferrer"
                       title="Open in new tab"
                     >
@@ -3846,9 +3819,9 @@ Focus on the key sections and content, making it clean and modern.`;
       </div>
 
       {/* Settings Modal */}
-      <SettingsModal 
-        isOpen={showSettingsModal} 
-        onClose={() => setShowSettingsModal(false)} 
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
       />
 
     </div>

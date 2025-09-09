@@ -1,6 +1,6 @@
 {
   "name": "openwebdev",
-  "version": "0.40",
+  "version": "0.50",
   "private": true,
   "type": "module",
   "scripts": {

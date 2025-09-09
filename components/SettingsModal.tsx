@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { appConfig } from '@/config/app.config';
+import { ModelSelector } from '@/components/ModelSelector';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -332,18 +333,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <Label htmlFor="defaultModel" className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2 block">
             Default AI Model
           </Label>
-          <select
-            id="defaultModel"
+          <ModelSelector
             value={appSettings.defaultModel}
-            onChange={(e) => handleAppSettingChange('defaultModel', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-          >
-            {appConfig.ai.availableModels.map(model => (
-              <option key={model} value={model}>
-                {(appConfig.ai.modelDisplayNames as any)[model] || model}
-              </option>
-            ))}
-          </select>
+            onChange={(model) => handleAppSettingChange('defaultModel', model)}
+          />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Choose your preferred AI model for code generation</p>
         </div>
 
