@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/app/components/theme-provider";
 
-const inter = Inter({ subsets: ["latin"] });
+// Use system fonts as fallback for build environments with network restrictions
+const fontClassName = 'font-sans';
 
 export const metadata: Metadata = {
   title: "openWebDev",
@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={fontClassName}>
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
