@@ -2756,7 +2756,7 @@ Focus on the key sections and content, making it clean and modern.`;
       {showHomeScreen && (
         <div className={`fixed inset-0 z-50 transition-opacity duration-500 ${homeScreenFading ? 'opacity-0' : 'opacity-100'}`}>
           {/* Simple Sun Gradient Background */}
-          <div className="absolute inset-0 bg-white overflow-hidden">
+          <div className="absolute inset-0 bg-white dark:bg-gray-900 overflow-hidden">
             {/* Main Sun - Pulsing */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-orange-400/50 via-orange-300/30 to-transparent rounded-full blur-[80px] animate-[sunPulse_4s_ease-in-out_infinite]" />
             
@@ -2787,7 +2787,7 @@ Focus on the key sections and content, making it clean and modern.`;
                 setHomeScreenFading(false);
               }, 500);
             }}
-            className="absolute top-8 right-8 text-gray-500 hover:text-gray-700 transition-all duration-300 opacity-0 hover:opacity-100 bg-white/80 backdrop-blur-sm p-2 rounded-lg shadow-sm"
+            className="absolute top-8 right-8 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all duration-300 opacity-0 hover:opacity-100 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-lg shadow-sm"
             style={{ opacity: 0 }}
             onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
             onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
@@ -2818,12 +2818,12 @@ Focus on the key sections and content, making it clean and modern.`;
             <div className="text-center max-w-4xl min-w-[600px] mx-auto">
               {/* Firecrawl-style Header */}
               <div className="text-center">
-                <h1 className="text-[2.5rem] lg:text-[3.8rem] text-center text-[#36322F] font-semibold tracking-tight leading-[0.9] animate-[fadeIn_0.8s_ease-out]">
+                <h1 className="text-[2.5rem] lg:text-[3.8rem] text-center text-[#36322F] dark:text-white font-semibold tracking-tight leading-[0.9] animate-[fadeIn_0.8s_ease-out]">
                   <span className="hidden md:inline">openWebDev</span>
                   <span className="md:hidden">openWebDev</span>
                 </h1>
                 <motion.p 
-                  className="text-base lg:text-lg max-w-lg mx-auto mt-2.5 text-zinc-500 text-center text-balance"
+                  className="text-base lg:text-lg max-w-lg mx-auto mt-2.5 text-zinc-500 dark:text-zinc-400 text-center text-balance"
                   animate={{
                     opacity: showStyleSelector ? 0.7 : 1
                   }}
@@ -2854,7 +2854,7 @@ Focus on the key sections and content, making it clean and modern.`;
                     }}
                     placeholder=" "
                     aria-placeholder="https://firecrawl.dev"
-                    className="h-[3.25rem] w-full resize-none focus-visible:outline-none focus-visible:ring-orange-500 focus-visible:ring-2 rounded-[18px] text-sm text-[#36322F] px-4 pr-12 border-[.75px] border-border bg-white"
+                    className="h-[3.25rem] w-full resize-none focus-visible:outline-none focus-visible:ring-orange-500 focus-visible:ring-2 rounded-[18px] text-sm text-[#36322F] dark:text-white px-4 pr-12 border-[.75px] border-border bg-white dark:bg-gray-800 dark:border-gray-600"
                     style={{
                       boxShadow: '0 0 0 1px #e3e1de66, 0 1px 2px #5f4a2e14, 0 4px 6px #5f4a2e0a, 0 40px 40px -24px #684b2514',
                       filter: 'drop-shadow(rgba(249, 224, 184, 0.3) -0.731317px -0.731317px 35.6517px)'
@@ -2867,14 +2867,14 @@ Focus on the key sections and content, making it clean and modern.`;
                       homeUrlInput ? 'opacity-0' : 'opacity-100'
                     }`}
                   >
-                    <span className="text-[#605A57]/50" style={{ fontFamily: 'monospace' }}>
+                    <span className="text-[#605A57]/50 dark:text-gray-400/70" style={{ fontFamily: 'monospace' }}>
                       https://firecrawl.dev
                     </span>
                   </div>
                   <button
                     type="submit"
                     disabled={!homeUrlInput.trim()}
-                    className="absolute top-1/2 transform -translate-y-1/2 right-2 flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium text-zinc-500 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="absolute top-1/2 transform -translate-y-1/2 right-2 flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title={selectedStyle ? `Clone with ${selectedStyle} Style` : 'Clone Website'}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
@@ -2890,8 +2890,8 @@ Focus on the key sections and content, making it clean and modern.`;
                       <div className={`transition-all duration-500 ease-out transform ${
                         showStyleSelector ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
                       }`}>
-                    <div className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-xl p-4 shadow-sm">
-                      <p className="text-sm text-gray-600 mb-3 font-medium">How do you want your site to look?</p>
+                    <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-600 rounded-xl p-4 shadow-sm">
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 font-medium">How do you want your site to look?</p>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         {[
                           { name: 'Neobrutalist', description: 'Bold colors, thick borders' },
@@ -2934,12 +2934,12 @@ Focus on the key sections and content, making it clean and modern.`;
                             }}
                             className={`p-3 rounded-lg border transition-all ${
                               selectedStyle === style.name
-                                ? 'border-orange-400 bg-orange-50 text-gray-900 shadow-sm'
-                                : 'border-gray-200 bg-white hover:border-orange-200 hover:bg-orange-50/50 text-gray-700'
+                                ? 'border-orange-400 bg-orange-50 dark:bg-orange-900/50 dark:border-orange-500 text-gray-900 dark:text-white shadow-sm'
+                                : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:border-orange-200 dark:hover:border-orange-400 hover:bg-orange-50/50 dark:hover:bg-orange-900/30 text-gray-700 dark:text-gray-200'
                             }`}
                           >
                             <div className="text-sm font-medium">{style.name}</div>
-                            <div className="text-xs text-gray-500 mt-1">{style.description}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{style.description}</div>
                           </button>
                         ))}
                       </div>
@@ -2972,7 +2972,7 @@ Focus on the key sections and content, making it clean and modern.`;
                             }
                           }}
                           placeholder="Add more details: specific features, color preferences..."
-                          className="w-full px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 transition-all duration-200"
+                          className="w-full px-4 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:border-orange-300 dark:focus:border-orange-500 focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-900/50 transition-all duration-200"
                         />
                       </div>
                     </div>

@@ -4,8 +4,9 @@
 [![Version](https://img.shields.io/github/package-json/v/mendableai/openWebDev)](https://github.com/mendableai/openWebDev/releases)
 [![License](https://img.shields.io/github/license/mendableai/openWebDev)](LICENSE)
 
-Chat with AI to build React apps instantly. An example app made by the [Firecrawl](https://firecrawl.dev/?ref=openwebdev-github) team. For a complete cloud solution, check out [Lovable.dev ❤️](https://lovable.dev/).
 
+
+Developed by Xenonesis
 ![openWebDev Demo](public/proof.png)
 
 ## Project Overview

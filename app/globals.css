@@ -482,7 +482,104 @@
   background-color: hsl(240 10% 3.9%);
 }
 
+/* Dark mode for "Get API Key" links in SettingsModal */
+.dark .text-blue-600 {
+  color: hsl(210 100% 70%); /* Lighter blue for better visibility */
+}
 
+.dark .hover\:text-blue-800:hover {
+  color: hsl(210 100% 85%); /* Even lighter blue on hover */
+}
+
+/* Dark mode for outline buttons */
+.dark .border-zinc-300 {
+  border-color: hsl(240 5% 64.9%); /* Better visible border in dark mode */
+}
+
+.dark .bg-transparent {
+  background-color: transparent;
+}
+
+.dark .text-zinc-900 {
+  color: hsl(0 0% 98%); /* White text instead of black in dark mode */
+}
+
+.dark .hover\:bg-zinc-50:hover {
+  background-color: hsl(240 3.7% 15.9%); /* Darker hover background */
+}
+
+/* Dark mode for default buttons */
+.dark .bg-zinc-900 {
+  background-color: hsl(240 5% 85%); /* Light gray instead of black */
+}
+
+.dark .text-white {
+  color: hsl(240 10% 3.9%); /* Dark text instead of white */
+}
+
+.dark .hover\:bg-zinc-800:hover {
+  background-color: hsl(240 5% 75%); /* Slightly lighter on hover */
+}
+
+/* More specific dark mode styles for button variants */
+.dark button.border.border-zinc-300.bg-transparent.text-zinc-900 {
+  border-color: hsl(240 5% 64.9%); /* More visible border */
+  color: hsl(0 0% 98%); /* White text */
+  background-color: transparent;
+}
+
+.dark button.border.border-zinc-300.bg-transparent.text-zinc-900:hover {
+  background-color: hsl(240 3.7% 15.9%); /* Darker hover background */
+}
+
+/* Dark mode styles for default buttons */
+.dark button.bg-zinc-900.text-white {
+  background-color: hsl(240 5% 85%); /* Light gray instead of black */
+  color: hsl(240 10% 3.9%); /* Dark text instead of white */
+}
+
+.dark button.bg-zinc-900.text-white:hover {
+  background-color: hsl(240 5% 75%); /* Slightly lighter on hover */
+}
+
+/* Dark mode styles for secondary buttons */
+.dark button.bg-zinc-100.text-zinc-900 {
+  background-color: hsl(240 3.7% 15.9%); /* Dark background */
+  color: hsl(0 0% 98%); /* White text */
+}
+
+.dark button.bg-zinc-100.text-zinc-900:hover {
+  background-color: hsl(240 3.7% 25%); /* Lighter on hover */
+}
+
+/* Dark mode styles for destructive buttons */
+.dark button.bg-red-500.text-white {
+  background-color: hsl(0 70% 60%); /* Vibrant red */
+  color: hsl(0 0% 100%); /* White text */
+}
+
+.dark button.bg-red-500.text-white:hover {
+  background-color: hsl(0 70% 50%); /* Darker red on hover */
+}
+
+/* Dark mode styles for orange buttons */
+.dark button.bg-orange-500.text-white {
+  background-color: hsl(25 95% 60%); /* Vibrant orange */
+  color: hsl(0 0% 100%); /* White text */
+}
+
+.dark button.bg-orange-500.text-white:hover {
+  background-color: hsl(25 95% 50%); /* Darker orange on hover */
+}
+
+/* Dark mode styles for ghost buttons */
+.dark button.hover\:bg-accent:hover {
+  background-color: hsl(240 3.7% 15.9%); /* Subtle background on hover */
+}
+
+.dark button.hover\:text-accent-foreground:hover {
+  color: hsl(25 95% 53%); /* Accent color on hover */
+}
 
 @layer utilities {
   /* Hide scrollbar for Chrome, Safari and Opera */
