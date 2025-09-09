@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/app/components/theme-provider";
+import { FontLoader } from "@/app/components/fonts";
 
-// Use system fonts as fallback for build environments with network restrictions
-const fontClassName = 'font-sans';
+// Dynamic font loading for better reliability in different environments
+const fontClassName = process.env.NODE_ENV === 'production' ? 'font-sans' : 'font-sans';
 
 export const metadata: Metadata = {
   title: "openWebDev",
@@ -21,6 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={fontClassName}>
+        <FontLoader />
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
